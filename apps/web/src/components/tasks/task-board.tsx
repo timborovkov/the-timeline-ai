@@ -718,7 +718,7 @@ function useTaskBoardController({
     const status = event.over?.id ? String(event.over.id) : null;
     if (!status || activeSavingCardIds().has(id)) return;
     const row = effectiveRows.find((candidate) => candidate.id === id);
-    if (!row || taskDisplayStatus(row.status) === status) return;
+    if (!row || row.statusSource || taskDisplayStatus(row.status) === status) return;
     const previousStatusPatch = rowPatches[id]?.patch.status;
     const previousStatusBaseline = rowPatches[id]?.baseline.status;
     startTransition(async () => {
@@ -1485,6 +1485,56 @@ function TaskListView({
 }
 
 // react-doctor-disable-next-line react-doctor/no-multi-comp -- Inline row editor is tightly coupled to task board patch semantics and tested through the board.
+function TaskRowStatus({
+  row,
+  columns,
+  saving,
+  onChange,
+}: {
+  row: TaskObjectRow;
+  columns: string[];
+  saving: boolean;
+  onChange: (value: string) => void;
+}) {
+  const title = displayObjectTitle(row);
+  return row.statusSource ? (
+    <span title="Status synced from GitHub">
+      {statusLabel(taskDisplayStatus(row.status))} · GitHub
+    </span>
+  ) : (
+    <EditableMetadata density="compact" label={`Status for ${displayText(title)}`} pending={saving}>
+      <EditableMetadata.Value>
+        <CollectionStatus value={row.status} label={statusLabel(taskDisplayStatus(row.status))} />
+      </EditableMetadata.Value>
+      <EditableMetadata.Editor>
+        <select
+          value={taskDisplayStatus(row.status)}
+          onChange={(event) => {
+            onChange(event.currentTarget.value);
+          }}
+          className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+          aria-label="Status"
+        >
+          {columns.map((column) => (
+            <option key={column} value={column}>
+              {statusLabel(column)}
+            </option>
+          ))}
+          {!columns.includes(taskDisplayStatus(row.status)) ? (
+            <option value={row.status}>{statusLabel(row.status)}</option>
+          ) : null}
+        </select>
+      </EditableMetadata.Editor>
+    </EditableMetadata>
+  );
+}
+function taskDragState(row: TaskObjectRow, saving: boolean) {
+  return {
+    disabled: saving || Boolean(row.statusSource),
+    reason: row.statusSource ? 'Status synced from GitHub' : undefined,
+  };
+}
+
 function TaskListRow({
   row,
   columns,
@@ -1562,37 +1612,14 @@ function TaskListRow({
         </CollectionRow.Title>
         <CollectionRow.Metadata>
           <>
-            <EditableMetadata
-              density="compact"
-              label={`Status for ${displayText(title)}`}
-              pending={saving === 'status'}
-            >
-              <EditableMetadata.Value>
-                <CollectionStatus
-                  value={row.status}
-                  label={statusLabel(taskDisplayStatus(row.status))}
-                />
-              </EditableMetadata.Value>
-              <EditableMetadata.Editor>
-                <select
-                  value={taskDisplayStatus(row.status)}
-                  onChange={(event) => {
-                    save('status', { status: event.currentTarget.value });
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  aria-label="Status"
-                >
-                  {columns.map((column) => (
-                    <option key={column} value={column}>
-                      {statusLabel(column)}
-                    </option>
-                  ))}
-                  {!columns.includes(taskDisplayStatus(row.status)) ? (
-                    <option value={row.status}>{statusLabel(row.status)}</option>
-                  ) : null}
-                </select>
-              </EditableMetadata.Editor>
-            </EditableMetadata>
+            <TaskRowStatus
+              row={row}
+              columns={columns}
+              saving={saving === 'status'}
+              onChange={(status) => {
+                save('status', { status });
+              }}
+            />
             {taskCategoriesEnabled &&
             (row.taskCategory ||
               row.taskCategoryStatus === 'pending' ||
@@ -2093,10 +2120,11 @@ function TaskCard({
   onProjectChangeReverted: (taskId: string) => void;
   pinned: boolean;
 }) {
+  const drag = taskDragState(row, saving);
   const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } =
     useDraggable({
       id: row.id,
-      disabled: saving,
+      disabled: drag.disabled,
     });
   const style = transform
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
@@ -2133,7 +2161,8 @@ function TaskCard({
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
-          disabled={saving}
+          disabled={drag.disabled}
+          title={drag.reason}
           className="inline-flex size-8 shrink-0 touch-none cursor-grab items-center justify-center rounded-sm text-fg-dim hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing disabled:cursor-progress"
           aria-label={`Drag ${displayText(title)}`}
         >

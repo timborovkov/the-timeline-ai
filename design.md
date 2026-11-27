@@ -269,3 +269,7 @@ For every changed surface:
 7. Keep a **small** deterministic visual set for high-value seeded routes
    (Linux Chromium only). Do not expand the matrix for every surface/theme;
    prefer layout/behavior assertions for the rest.
+
+### Board import controls
+
+From an active source, **Import and keep in sync** opens a source and board picker with a preview. Show existing matches and unresolved decisions before confirmation. A synced card identifies the provider beside the controlled field, links to the source when available and gives admins a way to stop syncing. Keep unrelated card controls editable. [Import workflow](docs/setup/integrations.md#import-and-keep-in-sync)

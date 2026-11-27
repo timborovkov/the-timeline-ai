@@ -37,6 +37,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   google_drive: 'Google Drive',
   linear: 'Linear',
   github: 'GitHub',
+  hubspot: 'HubSpot',
   monday: 'Monday.com',
   slack: 'Slack',
   sentry: 'Sentry',

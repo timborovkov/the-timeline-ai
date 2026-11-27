@@ -157,7 +157,12 @@ export function CuratedKanbanBoard({
   function moveItem(id: string, laneId: string | null): void {
     if (savingRef.current.has(id)) return;
     const item = optimisticItems.find((candidate) => candidate.id === id);
-    if (!item || item.laneId === laneId) return;
+    if (
+      !item ||
+      item.laneId === laneId ||
+      (item.importSource?.field === 'lane' && item.importSource.state === 'active')
+    )
+      return;
     markSaving(id, true);
     startTransition(async () => {
       moveOptimistic({ id, patch: { laneId } });
@@ -357,6 +362,14 @@ function KanbanColumn({
   );
 }
 
+function cardDragState(item: boards.BoardItemRow, saving: boolean, optimistic: boolean) {
+  const controlled = item.importSource?.field === 'lane' && item.importSource.state === 'active';
+  return {
+    disabled: saving || optimistic || controlled,
+    reason: controlled ? 'Stage synced from HubSpot' : undefined,
+  };
+}
+
 function KanbanCard({
   boardId,
   item,
@@ -377,10 +390,11 @@ function KanbanCard({
   onUpdateItem: (id: string, patch: BoardItemOptimisticPatch) => void;
 }) {
   const optimistic = item.id.startsWith('optimistic-');
+  const drag = cardDragState(item, saving, optimistic);
   const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } =
     useDraggable({
       id: item.id,
-      disabled: saving || optimistic,
+      disabled: drag.disabled,
     });
   const style = {
     contentVisibility: 'auto' as const,
@@ -430,8 +444,9 @@ function KanbanCard({
           type="button"
           {...attributes}
           {...listeners}
-          aria-label={dragLabel}
-          disabled={saving || optimistic}
+          aria-label={drag.reason ?? dragLabel}
+          title={drag.reason}
+          disabled={drag.disabled}
           className="inline-flex size-6 shrink-0 touch-none cursor-grab items-center justify-center rounded-sm text-fg-dim transition-colors hover:bg-surface-2 hover:text-fg active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60"
         >
           <GripVertical aria-hidden="true" className="size-3.5" />

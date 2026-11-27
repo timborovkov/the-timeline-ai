@@ -16,9 +16,9 @@ describe('pricing page FAQ', () => {
       expect(html).toContain(faq.answer);
     }
     expect(html).toContain('you may not need one');
-    expect(html).toContain('Linear already syncs');
+    expect(html).toContain('Linear syncs selected issues');
     expect(html).toContain('Atlassian MCP');
-    expect(html).toContain('HubSpot, Attio and Pipedrive');
+    expect(html).toContain('HubSpot supports one-way imports');
     expect(html).toContain('does not train or fine-tune models on Customer Content');
     expect(html).toContain('€0 spend cap');
     expect(html).toContain('50 Ask turns');

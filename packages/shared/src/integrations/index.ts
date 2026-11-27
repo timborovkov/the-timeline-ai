@@ -94,3 +94,9 @@ export {
   takeDriveExtractSlot,
   takeDriveProcessSlot,
 } from '#src/integrations/google-drive-capture.js';
+export {
+  hubspotWebhookBatches,
+  verifyHubSpotSignature,
+} from '#src/integrations/hubspot-webhooks.js';
+export { boardImportConfig } from '#src/integrations/board-imports.js';
+export { hubspotProvider } from '#src/integrations/providers/hubspot.js';

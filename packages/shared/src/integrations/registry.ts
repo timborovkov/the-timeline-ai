@@ -1,6 +1,7 @@
 import { getEnv } from '#src/env.js';
 import { githubProvider } from '#src/integrations/providers/github.js';
 import { googleDriveProvider } from '#src/integrations/providers/google-drive.js';
+import { hubspotProvider } from '#src/integrations/providers/hubspot.js';
 import { linearProvider } from '#src/integrations/providers/linear.js';
 import { mondayProvider } from '#src/integrations/providers/monday.js';
 import { sentryProvider } from '#src/integrations/providers/sentry.js';
@@ -40,6 +41,7 @@ const _registry: Record<NativeProviderId, IntegrationProvider> = {
   google_drive: googleDriveProvider,
   linear: linearProvider,
   github: githubProvider,
+  hubspot: hubspotProvider,
   monday: mondayProvider,
   slack: slackProvider,
   sentry: sentryProvider,
@@ -56,6 +58,7 @@ export function getProvider(id: string): IntegrationProvider {
     {
       google_drive: env.GOOGLE_CLIENT_ID,
       linear: env.LINEAR_CLIENT_ID,
+      hubspot: env.HUBSPOT_CLIENT_ID,
       github: env.GITHUB_APP_ID ?? env.GITHUB_APP_CLIENT_ID,
       monday: env.MONDAY_CLIENT_ID,
       slack: env.SLACK_CLIENT_ID,
@@ -196,7 +199,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     id: 'github',
     label: 'GitHub',
     description:
-      'Native repo sync: PRs, issues, reviews, merged commits, releases, and CI runs become cited events.',
+      'Capture repository activity. Import issues and track merged pull requests on a board.',
     logo: '/connectors/github.svg',
     category: 'dev-tools',
     kind: 'native',
@@ -379,21 +382,21 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     staticStatus: 'mcp_available',
   },
 
-  // ─────────────────────── Coming soon ───────────────────────────────
   {
     id: 'hubspot',
     label: 'HubSpot',
-    description:
-      'Native company, contact, deal, ticket, note, and pipeline-event ingestion is planned.',
+    description: 'Capture deals, associated companies, and stage changes from selected pipelines.',
     logo: '/connectors/hubspot.svg',
     category: 'crm',
-    kind: 'mcp',
+    kind: 'native',
     featured: true,
-    connectablePath: '/app/connections/agent-tools',
-    ingestStatus: 'coming_soon',
-    examplePrompt: 'Which Q3 deals slipped to Q4?',
-    staticStatus: 'coming_soon',
+    connectablePath: '/app/connections/sources',
+    ingestStatus: 'implemented',
+    examplePrompt: 'Which deals moved through our sales pipeline?',
+    envCheck: () => Boolean(getEnv().HUBSPOT_CLIENT_ID && getEnv().HUBSPOT_CLIENT_SECRET),
   },
+
+  // ─────────────────────── Coming soon ───────────────────────────────
   {
     id: 'salesforce',
     label: 'Salesforce',
@@ -610,7 +613,7 @@ export function listFeaturedCatalog(): CatalogEntry[] {
  * this list with `available: false` so the UI can disclose them quietly.
  */
 export interface LegacyCatalogEntry {
-  id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
+  id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry' | 'hubspot';
   label: string;
   description: string;
   logo: string;

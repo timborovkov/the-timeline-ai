@@ -2426,6 +2426,8 @@ function configuredBudgetAppKey(value: string | undefined): string | undefined {
 export function providerBudgetAppKey(provider: NativeProviderName): string {
   const env = getEnv();
   switch (provider) {
+    case 'hubspot':
+      return configuredBudgetAppKey(env.HUBSPOT_CLIENT_ID) ?? 'hubspot';
     case 'github':
       return (
         configuredBudgetAppKey(env.GITHUB_APP_ID) ??

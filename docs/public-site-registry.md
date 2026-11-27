@@ -77,7 +77,7 @@ comparison page and expanded LLM entry show the same check date.
 Notion remains integrations-only.
 The Integrations
 header dropdown and matching footer column list the hub plus live destinations:
-Slack (native sync), Telegram (capture), Google Drive, GitHub, Linear,
+Slack (native sync), Telegram (capture), Google Drive, GitHub, HubSpot, Linear,
 Monday.com, Sentry, and Connect MCP tools (`/integrations/mcp`). Slack and
 Telegram keep those status labels and their dedicated connector/capture pages;
 they are not added to works-with filters. Jira and Notion remain truthful

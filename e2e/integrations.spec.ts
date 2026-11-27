@@ -4,7 +4,7 @@ import { encryptJson } from '@timeline/shared/crypto';
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import { getDbClient } from '@timeline/db';
 
-import { signIn, waitForPost } from './helpers.js';
+import { newSignedInPage, signIn, waitForPost } from './helpers.js';
 import { E2E_PREFIX, e2eTeam, e2eUsers } from './test-data.js';
 
 const SEED_PREFIX = `${E2E_PREFIX} integration health`;
@@ -1479,4 +1479,64 @@ test.describe.serial('provider OAuth callback success', () => {
     await expect(accountCard.getByText('GitHub - Timeline E2E')).toBeVisible();
     await expect(accountCard.getByText('Personal provider account')).toBeVisible();
   });
+});
+
+test('previews a pipeline import, links a company, and releases the synced lane', async ({
+  browser,
+}) => {
+  const page = await newSignedInPage(browser, 'owner');
+  const sql = getDbClient();
+  const board = randomUUID();
+  const lane = randomUUID();
+  const integration = randomUUID();
+  const company = randomUUID();
+  const dealName = E2E_PREFIX + ' renewal';
+  const companyName = E2E_PREFIX + ' CRM company';
+  await sql`insert into integrations(id,team_id,connected_by_user_id,provider,external_account_id,display_name)
+    values(${integration},${e2eTeam.id},${e2eUsers.owner.id},'hubspot',${integration},'Fixture CRM')`;
+  await sql`insert into integration_selections(integration_id,selection_kind,external_id,external_label)
+    values(${integration},'hubspot.pipeline','sales','Fixture sales')`;
+  await sql`insert into boards(id,team_id,name) values(${board},${e2eTeam.id},'Fixture sales board')`;
+  await sql`insert into board_lanes(id,team_id,board_id,name,position) values(${lane},${e2eTeam.id},${board},'Qualified',0)`;
+  await sql`insert into entities(id,team_id,type,canonical_name) values(${company},${e2eTeam.id},'company',${companyName})`;
+  const sourceMetadata = {
+    provider: 'hubspot',
+    integration_id: integration,
+    external_object_id: '123:deal:5',
+    event_type: 'deal.updated',
+    dedup_key: 'hubspot:' + integration,
+    signal_class: 'captured_work',
+    hubspot: {
+      id: '5',
+      title: dealName,
+      active: true,
+      pipeline_id: 'sales',
+      stage_id: 'qualified',
+      stage_label: 'Qualified deal',
+      companies: [{ id: '2', name: companyName }],
+    },
+  };
+  await sql`insert into raw_events(team_id,source,visibility,occurred_at,content_text,source_metadata)
+    values(${e2eTeam.id},'integration','team',now(),${dealName},${JSON.stringify(sourceMetadata)}::jsonb)`;
+  await page.goto('/app/connections/import?provider=hubspot');
+  await page
+    .getByRole('combobox', { name: 'Source', exact: true })
+    .selectOption({ label: 'Fixture sales' });
+  await page.getByRole('combobox', { name: 'Destination board', exact: true }).selectOption(board);
+  await page.getByRole('button', { name: 'Preview import' }).click();
+  await page.getByRole('combobox', { name: 'Qualified deal', exact: true }).selectOption(lane);
+  await page.getByRole('button', { name: 'Preview import' }).click();
+  await page.getByLabel('Match for ' + companyName).selectOption(company);
+  await page.getByRole('button', { name: 'Confirm and keep in sync' }).click();
+  await expect(page.getByText('Import saved.', { exact: false })).toBeVisible();
+  await page.goto('/app/boards/' + board);
+  await page.getByRole('link', { name: dealName, exact: true }).click();
+  await expect(page.getByText('Stage synced from HubSpot', { exact: true })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Lane', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Stop syncing stage' }).click();
+  await expect(page.getByRole('combobox', { name: 'Lane', exact: true })).toBeEnabled();
+  const companies =
+    await sql`select id from entities where team_id=${e2eTeam.id} and type='company' and canonical_name=${companyName}`;
+  expect(companies.map((row) => row.id)).toEqual([company]);
+  await page.context().close();
 });

@@ -18,7 +18,7 @@ await vi.mock(
 
 const { generateKeyPairSync } = await import('node:crypto');
 const { resetEnvForTests } = await import('#src/env.js');
-const { GithubRateLimitError, githubProvider } =
+const { GithubRateLimitError, githubProvider, githubClosingIssueKeys } =
   await import('#src/integrations/providers/github.js');
 const { ProviderRateLimitError } = await import('#src/integrations/types.js');
 
@@ -133,6 +133,34 @@ describe('githubProvider.handleOAuthCallback', () => {
     process.env = { ...ENV_BACKUP };
     resetEnvForTests();
     vi.restoreAllMocks();
+  });
+
+  it('reads every page of provider-confirmed closing issues with installation credentials', async () => {
+    const graph = (ids: number[], next: string | null) =>
+      Response.json({
+        data: {
+          repository: {
+            pullRequest: {
+              closingIssuesReferences: {
+                nodes: ids.map((databaseId) => ({ databaseId })),
+                pageInfo: { hasNextPage: Boolean(next), endCursor: next },
+              },
+            },
+          },
+        },
+      });
+    const request = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(graph([12], 'page-two'))
+      .mockResolvedValueOnce(graph([18], null));
+    globalThis.fetch = Object.assign(request, { preconnect: vi.fn() });
+    expect(await githubClosingIssueKeys(installedTestTokens(), 'acme/app', 42)).toEqual([
+      'issue:12',
+      'issue:18',
+    ]);
+    const [, last] = request.mock.calls[1] ?? [];
+    expect(new Headers(last?.headers).get('authorization')).toBe('Bearer ghs_test_installation');
+    expect(last?.body).toContain('page-two');
   });
 
   it('uses the deterministic E2E callback fixture without calling GitHub', async () => {

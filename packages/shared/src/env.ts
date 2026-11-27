@@ -374,10 +374,10 @@ const baseSchema = z.object({
   REDIS_URL: z.url().optional(),
   INTEGRATION_REQUEST_GOVERNOR_PROVIDERS: z
     .string()
-    .default('google_drive,linear,github,monday,slack,sentry'),
+    .default('google_drive,linear,github,monday,slack,sentry,hubspot'),
   INTEGRATION_RECOVERY_PROVIDERS: z
     .string()
-    .default('google_drive,linear,github,monday,slack,sentry'),
+    .default('google_drive,linear,github,monday,slack,sentry,hubspot'),
 
   // Qdrant (Phase 5+)
   QDRANT_URL: z.url().optional(),
@@ -661,6 +661,8 @@ const baseSchema = z.object({
   LINEAR_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   LINEAR_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
   LINEAR_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  HUBSPOT_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  HUBSPOT_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
   GITHUB_APP_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   GITHUB_APP_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
   GITHUB_APP_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),

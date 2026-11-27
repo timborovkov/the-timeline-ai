@@ -3146,7 +3146,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         .object({
           query: z.string().trim().min(1).max(500),
           provider: z
-            .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry'])
+            .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry', 'hubspot'])
             .optional(),
           limit: z.number().int().min(1).max(20).optional(),
         })
@@ -3157,7 +3157,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             .object({
               query: z.string().trim().min(1).max(500),
               provider: z
-                .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry'])
+                .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry', 'hubspot'])
                 .optional(),
               limit: z.number().int().min(1).max(20).optional(),
             })
@@ -3233,7 +3233,15 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         "Look up the current state of an external object that was synced from a connected integration. Returns the workspace entity (when one exists) plus the most recent integration_event history. Use when the user names a specific external object (e.g. 'ENG-42', 'acme/repo#7', 'Drive file ...') and you want the latest status before answering.",
       inputSchema: z
         .object({
-          provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']),
+          provider: z.enum([
+            'google_drive',
+            'linear',
+            'github',
+            'monday',
+            'slack',
+            'sentry',
+            'hubspot',
+          ]),
           externalObjectId: z.string().min(1).max(512),
           historyLimit: z.number().int().min(1).max(50).optional(),
         })
@@ -3242,7 +3250,15 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         runSafe('get_integration_resource', async () => {
           const parsed = z
             .object({
-              provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']),
+              provider: z.enum([
+                'google_drive',
+                'linear',
+                'github',
+                'monday',
+                'slack',
+                'sentry',
+                'hubspot',
+              ]),
               externalObjectId: z.string().min(1).max(512),
               historyLimit: z.number().int().min(1).max(50).optional(),
             })

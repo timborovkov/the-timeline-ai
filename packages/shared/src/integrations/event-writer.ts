@@ -478,6 +478,28 @@ export async function writeIntegrationEvents(deps: {
     rawEventIdsByDedupKey,
   });
 
+  const managedEvents = new Set<string>();
+  const { provider, externalAccountId, connectedByUserId } = deps.integration;
+  if (
+    (provider === 'github' || provider === 'hubspot') &&
+    externalAccountId &&
+    connectedByUserId &&
+    activeWritableEvents.length
+  ) {
+    const owners = await withTeam(
+      deps.db,
+      teamId,
+      connectedByUserId,
+    ).boardImports.authorizedWorkers(provider, externalAccountId);
+    for (const owner of owners) {
+      const handled = await withTeam(deps.db, teamId, owner).boardImports.applyEvents(
+        deps.integration.id,
+        [...rawEventIdsByDedupKey.values()],
+      );
+      for (const id of handled) managedEvents.add(id);
+    }
+  }
+
   const artifactEvents = activeWritableEvents.filter(
     (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } =>
       Boolean(evt.objectMap) && integrationEventClass(evt) !== 'pulse',
@@ -521,6 +543,7 @@ export async function writeIntegrationEvents(deps: {
     const capturedWorkItems = [
       ...new Set(
         repairableArtifactEvents
+          .filter((event) => !managedEvents.has(rawEventIdsByDedupKey.get(event.dedupKey) ?? ''))
           .map((event) => capturedWorkItemFromIntegrationEvent(event)?.externalId)
           .filter((externalId): externalId is string => typeof externalId === 'string'),
       ),

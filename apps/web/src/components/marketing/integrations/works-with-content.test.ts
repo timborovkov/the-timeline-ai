@@ -17,7 +17,6 @@ describe('works-with content', () => {
     expect(WORKS_WITH_PAGE_TOOLS.map((tool) => tool.slug)).toEqual([
       'jira',
       'notion',
-      'hubspot',
       'attio',
       'pipedrive',
     ]);
@@ -38,17 +37,17 @@ describe('works-with content', () => {
     expect(jira.today).toMatch(/Atlassian MCP/i);
     expect(notion.status).toBe('mcp-lookup');
     expect(notion.today).toMatch(/Notion MCP/i);
-    expect(hubspot.status).toBe('coming-soon');
+    expect(hubspot.status).toBe('native-sync');
     expect(attio.status).toBe('coming-soon');
     expect(pipedrive.status).toBe('coming-soon');
-    expect(hubspot.today).toMatch(/does not sync HubSpot/i);
+    expect(hubspot.today).toMatch(/HubSpot pipeline changes/i);
     expect(attio.later).toMatch(/no Attio MCP lookup/i);
     expect(pipedrive.later).toMatch(/no Pipedrive MCP lookup/i);
 
     const copy = JSON.stringify(WORKS_WITH_TOOLS);
     expect(copy).not.toMatch(/\bvs\.?\b|switch from/iu);
 
-    expect(hubspot.statusLabel).toBe('Coming soon');
+    expect(hubspot.statusLabel).toBe('Native sync');
     expect(jira.statusLabel).toBe('MCP lookup');
     expect(linear.statusLabel).toBe('Native sync');
 

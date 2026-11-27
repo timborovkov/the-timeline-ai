@@ -253,6 +253,7 @@ export const NATIVE_PROVIDER_IDS = [
   'monday',
   'slack',
   'sentry',
+  'hubspot',
 ] as const satisfies readonly NativeProviderId[];
 
 export function isNativeProviderId(provider: string): provider is NativeProviderId {
@@ -310,6 +311,14 @@ export const PROVIDER_SYNC_POLICIES: Record<NativeProviderId, ProviderSyncPolicy
     supportsWebhookIngress: true,
     supportsTargetedSync: false,
     provisioningModel: 'manual',
+  },
+  hubspot: {
+    reconciliationIntervalMs: 6 * HOUR_MS,
+    ingestionPosture: 'webhook_wakeup',
+    budgetScopes: ['requests'],
+    supportsWebhookIngress: true,
+    supportsTargetedSync: false,
+    provisioningModel: 'app_level',
   },
   sentry: {
     reconciliationIntervalMs: 24 * HOUR_MS,
@@ -663,7 +672,7 @@ export interface OAuthCallbackOutput {
 }
 
 export interface IntegrationProvider extends ProviderResourceAccess {
-  id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
+  id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry' | 'hubspot';
   displayLabel: string;
   syncSelectionPolicy: SyncSelectionPolicy;
   /**

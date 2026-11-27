@@ -266,7 +266,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       },
     ],
     boundary:
-      'The Timeline keeps its own people, company and deal records. It doesn’t sync to Pipedrive, HubSpot or Salesforce today (listed as coming later).',
+      'The Timeline keeps its own people, company and deal records. A selected HubSpot pipeline can feed a Timeline board. Pipedrive and Salesforce ingestion are planned.',
     example: {
       label: 'Example',
       lines: [
@@ -279,7 +279,8 @@ export const USE_CASES: readonly UseCaseContent[] = [
     faqs: [
       {
         question: 'Does The Timeline update Pipedrive, HubSpot or Salesforce automatically?',
-        answer: 'No. Native sync with those tools is planned, not available today.',
+        answer:
+          'CRM updates travel one way from a selected HubSpot pipeline into Timeline. Your sales team edits deals in HubSpot.',
       },
       {
         question: 'Can an internal Slack comment become customer fact?',

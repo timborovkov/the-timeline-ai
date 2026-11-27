@@ -44,6 +44,7 @@ import {
   updateObjectAction,
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
+import { ImportSourceControl } from '@/components/boards/import-source-control';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { CitationMarker } from '@/components/chat/citation-marker';
 import { CollectionStatus } from '@/components/collections/collection-status';
@@ -1691,41 +1692,23 @@ function ObjectHeaderIdentity({
     </div>
   );
 }
-function ObjectEditableFields({
+function ObjectStatusField({
   detail,
-  aliasesDraft,
-  stageDraft,
-  dueDraft,
-  focusedDraftsRef,
   patch,
-  dispatchObjectUi,
-  projects = EMPTY_PROJECT_OPTIONS,
-  companies = EMPTY_COMPANY_OPTIONS,
-  members = EMPTY_MEMBER_OPTIONS,
-  primaryProject = null,
-  primaryCompany = null,
-  taskCategoriesEnabled = true,
 }: {
   detail: ObjectDetail;
-  aliasesDraft: string;
-  stageDraft: string;
-  dueDraft: string;
-  focusedDraftsRef: RefObject<Record<DraftField, boolean>>;
   patch: (field: EditableField, value: EditableValue) => void;
-  dispatchObjectUi: Dispatch<ObjectDetailUiAction>;
-  projects?: { id: string; label: string }[];
-  companies?: { id: string; label: string }[];
-  members?: { id: string; label: string }[];
-  primaryProject?: objects.TaskPrimaryProjectRow | null;
-  primaryCompany?: objects.PersonPrimaryCompanyRow | null;
-  taskCategoriesEnabled?: boolean;
 }) {
-  const options = statusOptions(detail.type);
-  const assignee = members.find((member) => member.id === detail.assigneeUserId);
   const title = displayObjectTitle(detail);
+  const options = statusOptions(detail.type);
   return (
-    <ObjectRailSection label="Properties" aria-label="Properties">
-      <ObjectRailRow label="Status">
+    <ObjectRailRow label="Status">
+      {detail.statusSource ? (
+        <div>
+          {statusLabel(detail.status)}
+          <ImportSourceControl source={detail.statusSource} />
+        </div>
+      ) : (
         <EditableMetadata
           label={`Status for ${displayText(title)}`}
           className="min-h-8 min-w-0 flex-1 justify-start px-0 text-left text-sm text-fg [&>span]:whitespace-normal"
@@ -1758,7 +1741,44 @@ function ObjectEditableFields({
             </select>
           </EditableMetadata.Editor>
         </EditableMetadata>
-      </ObjectRailRow>
+      )}
+    </ObjectRailRow>
+  );
+}
+function ObjectEditableFields({
+  detail,
+  aliasesDraft,
+  stageDraft,
+  dueDraft,
+  focusedDraftsRef,
+  patch,
+  dispatchObjectUi,
+  projects = EMPTY_PROJECT_OPTIONS,
+  companies = EMPTY_COMPANY_OPTIONS,
+  members = EMPTY_MEMBER_OPTIONS,
+  primaryProject = null,
+  primaryCompany = null,
+  taskCategoriesEnabled = true,
+}: {
+  detail: ObjectDetail;
+  aliasesDraft: string;
+  stageDraft: string;
+  dueDraft: string;
+  focusedDraftsRef: RefObject<Record<DraftField, boolean>>;
+  patch: (field: EditableField, value: EditableValue) => void;
+  dispatchObjectUi: Dispatch<ObjectDetailUiAction>;
+  projects?: { id: string; label: string }[];
+  companies?: { id: string; label: string }[];
+  members?: { id: string; label: string }[];
+  primaryProject?: objects.TaskPrimaryProjectRow | null;
+  primaryCompany?: objects.PersonPrimaryCompanyRow | null;
+  taskCategoriesEnabled?: boolean;
+}) {
+  const assignee = members.find((member) => member.id === detail.assigneeUserId);
+  const title = displayObjectTitle(detail);
+  return (
+    <ObjectRailSection label="Properties" aria-label="Properties">
+      <ObjectStatusField detail={detail} patch={patch} />
       {<ObjectPriorityField title={title} detail={detail} patch={patch} />}
       {detail.type === 'task' ? (
         <ObjectAssigneeField

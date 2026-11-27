@@ -1,3 +1,4 @@
+import type { ImportSource } from '#src/integrations/import-sources.js';
 import type {
   TaskCategory,
   TaskCategoryMode,
@@ -65,6 +66,7 @@ export interface ObjectSearchFilter extends Omit<ObjectListFilter, 'cursor' | 'o
 }
 
 export interface ObjectRow {
+  statusSource?: ImportSource;
   id: string;
   type: ObjectType;
   canonicalName: string;

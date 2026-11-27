@@ -86,6 +86,219 @@ describe('writeIntegrationEvents visibility', () => {
     await pg.close();
   });
 
+  it('imports a selected HubSpot pipeline, preserves company identity, and releases the lane on unlink', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'hubspot',
+        externalAccountId: '55',
+        displayName: 'CRM',
+      })
+      .returning();
+    if (!integration) throw new Error('Missing test integration');
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const other = withTeam(db as never, TEAM_ID, USER_B_ID);
+    const boardId = '22222222-1111-4111-8111-222222222222',
+      lane1 = '33333333-1111-4111-8111-222222222222',
+      lane2 = '33333333-1111-4111-8111-333333333333';
+    await pg.exec(`insert into integration_selections(integration_id,selection_kind,external_id) values ('${integration.id}','hubspot.pipeline','sales');
+    insert into boards(id,team_id,name) values ('${boardId}','${TEAM_ID}','Sales');
+    insert into board_lanes(id,team_id,board_id,name,position) values ('${lane1}','${TEAM_ID}','${boardId}','Open',0),('${lane2}','${TEAM_ID}','${boardId}','Won',1);
+    insert into entities(team_id,type,canonical_name) values ('${TEAM_ID}','company','Example Co');`);
+    const config = {
+      integrationId: integration.id,
+      boardId,
+      resource: 'sales',
+      projectId: null,
+      issues: false,
+      merges: false,
+      history: false,
+      stageLanes: { one: lane1, two: lane2 },
+    };
+    const event = (stage: string, serial: number) => ({
+      provider: 'hubspot',
+      eventType: 'deal.updated',
+      signalClass: 'captured_work' as const,
+      eventClass: 'work_record' as const,
+      occurredAt: new Date(1790000000000 + serial),
+      dedupKey: 'hubspot:55:deal:1:' + String(serial),
+      externalObjectId: '55:deal:1',
+      contentText: 'Example renewal',
+      extra: {
+        hubspot: {
+          id: '1',
+          title: 'Example renewal',
+          active: true,
+          pipeline_id: 'sales',
+          stage_id: stage,
+          stage_label: stage,
+          companies: [{ id: '3', name: 'Example Co' }],
+        },
+      },
+    });
+    const write = (stage: string, serial: number) =>
+      writeIntegrationEvents({ db: db as never, integration, events: [event(stage, serial)] });
+    await write('one', 1);
+    await expect(other.boardImports.preview(config)).rejects.toThrow();
+    const preview = await scope.boardImports.preview(config);
+    const company = preview.rows.find((r) => r.kind === 'company')?.candidates[0];
+    if (!company) throw new Error('Expected existing company in preview');
+    await scope.boardImports.confirm(config, preview.revision, { 'company:3': company.id });
+    await scope.objects.updateObject(
+      company.id,
+      { canonicalName: 'Example Company' },
+      { kind: 'user', userId: USER_ID },
+    );
+    await write('two', 2);
+    await write('one', 1);
+    await write('one', 0);
+    let board = await scope.boards.getBoard(boardId);
+    expect(board?.items).toHaveLength(1);
+    expect(board?.items[0]?.laneId).toBe(lane2);
+    expect(await db.select().from(entities)).toHaveLength(2);
+    const item = board?.items[0];
+    if (!item) throw new Error('Expected imported deal card');
+    await expect(
+      scope.boards.updateBoardItem(item.id, { laneId: lane1 }, { kind: 'user', userId: USER_ID }),
+    ).rejects.toThrow();
+    const exitEvent = {
+      ...event('two', 3),
+      eventType: 'deal.left_pipeline',
+      extra: { hubspot: { id: '1', pipeline_id: 'sales', active: false } },
+    };
+    await writeIntegrationEvents({ db: db as never, integration, events: [exitEvent] });
+    expect((await scope.boardImports.ownership({ itemId: item.id }))[0]?.state).toBe('paused');
+    await scope.boards.updateBoardItem(
+      item.id,
+      { laneId: lane1 },
+      { kind: 'user', userId: USER_ID },
+    );
+    await write('two', 4);
+    expect((await scope.boards.getBoard(boardId))?.items[0]?.laneId).toBe(lane2);
+    const [link] = await scope.boardImports.ownership({ itemId: item.id });
+    if (!link) throw new Error('Expected synced lane');
+    await scope.boardImports.unlink(link.id);
+    await scope.boards.updateBoardItem(
+      item.id,
+      { laneId: lane1 },
+      { kind: 'user', userId: USER_ID },
+    );
+    await write('two', 5);
+    board = await scope.boards.getBoard(boardId);
+    expect(board?.items[0]?.laneId).toBe(lane1);
+  });
+
+  it('syncs issue closure and reopening, attaches its merged PR, and imports standalone work once', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        externalAccountId: '55',
+        displayName: 'GitHub',
+      })
+      .returning();
+    if (!integration) throw new Error('Missing test integration');
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const boardId = '22222222-1111-4111-8111-222222222222',
+      projectId = '33333333-1111-4111-8111-222222222222';
+    await pg.exec(`insert into integration_selections(integration_id,selection_kind,external_id) values ('${integration.id}','github.repo','example/app');
+      insert into boards(id,team_id,name) values ('${boardId}','${TEAM_ID}','Work');
+      insert into entities(id,team_id,type,canonical_name) values ('${projectId}','${TEAM_ID}','project','Application');
+      insert into entities(team_id,type,canonical_name) values ('${TEAM_ID}','task','Fix sync');`);
+    const config = {
+      integrationId: integration.id,
+      boardId,
+      resource: 'example/app',
+      projectId,
+      issues: true,
+      merges: true,
+      history: true,
+      stageLanes: {},
+    };
+    const write = (
+      n: number,
+      action: string,
+      serial: number,
+      closes: string[] = [],
+      visibility: 'team' | 'private' = 'team',
+    ) => {
+      const pr = action.startsWith('pr.'),
+        date = new Date(1790000000000 + serial);
+      return writeIntegrationEvents({
+        db: db as never,
+        integration,
+        events: [
+          {
+            provider: 'github',
+            eventType: action,
+            signalClass: 'captured_work',
+            eventClass: 'work_record',
+            visibility,
+            occurredAt: date,
+            dedupKey: `github:${n}:${serial}`,
+            externalObjectId: 'example/app#' + String(n),
+            contentText: n === 1 ? 'Fix sync' : 'Merged work ' + String(n),
+            extra: {
+              github: {
+                repo: 'example/app',
+                id: String(n),
+                number: n,
+                type: pr ? 'pull_request' : 'issue',
+                state: action === 'issue.reopened' ? 'open' : 'closed',
+                title: n === 1 ? 'Fix sync' : 'Merged work ' + String(n),
+                url: 'https://github.com/example/app/' + (pr ? 'pull/' : 'issues/') + String(n),
+                merged_at: action === 'pr.merged' ? date.toISOString() : null,
+                closing_issues: closes,
+                state_reason: action === 'issue.closed' && serial === 7 ? 'not_planned' : null,
+              },
+            },
+          },
+        ],
+      });
+    };
+    await write(1, 'issue.closed', 1);
+    await write(2, 'pr.merged', 2, ['issue:1']);
+    expect(
+      (await scope.boardImports.preview({ ...config, history: false })).rows.map((row) => row.key),
+    ).toEqual(['issue:1']);
+    const preview = await scope.boardImports.preview(config);
+    const task = preview.rows.find((r) => r.key === 'issue:1')?.candidates[0];
+    if (!task) throw new Error('Expected existing task in preview');
+    await scope.boardImports.confirm(config, preview.revision, { 'issue:1': task.id });
+    await write(3, 'pr.merged', 3);
+    await write(3, 'pr.merged', 3);
+    await write(4, 'pr.closed', 4);
+    await write(5, 'pr.merged', 5, [], 'private');
+    expect((await scope.boards.getBoard(boardId))?.items).toHaveLength(2);
+    expect(
+      (await scope.boardImports.ownership({ entityId: task.id })).map((row) => row.field).sort(),
+    ).toEqual(['reference', 'status']);
+    expect((await scope.objects.getObject(task.id))?.status).toBe('done');
+    await write(1, 'issue.reopened', 6);
+    await write(1, 'issue.closed', 1);
+    expect((await scope.objects.getObject(task.id))?.status).toBe('todo');
+    await write(1, 'issue.closed', 7);
+    expect((await scope.objects.getObject(task.id))?.status).toBe('cancelled');
+    await write(9, 'pr.merged', 8, ['issue:8']);
+    expect((await scope.boards.getBoard(boardId))?.items).toHaveLength(2);
+    await write(8, 'issue.closed', 9);
+    const updated = await scope.boards.getBoard(boardId);
+    expect(updated?.items).toHaveLength(3);
+    const linkedIssue = updated?.items.find(
+      (item) => item.object.canonicalName === 'Merged work 8',
+    );
+    if (!linkedIssue) throw new Error('Expected task for the later issue');
+    expect(
+      (await scope.boardImports.ownership({ entityId: linkedIssue.entityId }))
+        .map((link) => link.field)
+        .sort(),
+    ).toEqual(['reference', 'status']);
+  });
+
   it('does not write specific_users without user ids for per-event overrides', async () => {
     const [integration] = await db
       .insert(integrations)

@@ -135,6 +135,11 @@ describe('integration registry catalog visibility', () => {
     expect(byId.get('google_drive')?.ingestStatus).toBe('implemented');
     expect(byId.get('linear')?.ingestStatus).toBe('implemented');
     expect(byId.get('github')?.ingestStatus).toBe('implemented');
+    expect(byId.get('hubspot')).toMatchObject({
+      kind: 'native',
+      ingestStatus: 'implemented',
+      connectablePath: '/app/connections/sources',
+    });
     expect(byId.get('monday')?.ingestStatus).toBe('implemented');
     expect(byId.get('slack')?.ingestStatus).toBe('implemented');
     expect(byId.get('sentry')?.ingestStatus).toBe('implemented');

@@ -134,7 +134,7 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
       },
     ],
     timelineSide:
-      'The Timeline can hold people, company and deal records that come from the conversation record, with human approval before inferred durable changes. Native HubSpot, Attio and Pipedrive ingest is coming soon. Timeline does not prospect, enrich leads, or record sales calls onto a CRM phone number.',
+      'The Timeline can hold people, company and deal records that come from the conversation record, with human approval before inferred durable changes. A selected HubSpot pipeline can sync to a Timeline board. Native Attio and Pipedrive ingest is planned. Timeline does not prospect, enrich leads, or record sales calls onto a CRM phone number.',
     whenCompetitorBetter:
       "Choose Folk when you want an AI CRM for the sales motion: prospecting, enrichment, multi-channel outreach and calls recorded on Folk's own number. That is the product Folk publishes on folk.app.",
   },

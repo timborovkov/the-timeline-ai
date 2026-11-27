@@ -213,6 +213,7 @@ const PRODUCT_EVENT_SCHEMAS = {
       provider: z.enum([
         'google_drive',
         'linear',
+        'hubspot',
         'github',
         'monday',
         'slack',
@@ -301,7 +302,17 @@ const PRODUCT_EVENT_SCHEMAS = {
       ]),
       kind: z.enum(['native', 'custom_ingest_webhook', 'mcp_inbound', 'mcp_outbound']),
       provider: z
-        .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry', 'telegram', 'mcp'])
+        .enum([
+          'google_drive',
+          'linear',
+          'github',
+          'monday',
+          'slack',
+          'sentry',
+          'hubspot',
+          'telegram',
+          'mcp',
+        ])
         .optional(),
     })
     .strict(),

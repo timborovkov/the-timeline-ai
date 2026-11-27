@@ -12,6 +12,7 @@ import type {
   BoardItemOptimisticPatch,
   BoardMemberOption,
 } from '@/components/boards/board-detail-client';
+import { ImportSourceControl } from '@/components/boards/import-source-control';
 import { RemoveBoardItemButton } from '@/components/boards/remove-board-item-button';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -188,6 +189,9 @@ export function BoardCardDetail({
         nextStepDraft={currentDraftState.nextStepDraft}
         filterParams={filterParams}
       />
+      {item.importSource && (
+        <ImportSourceControl source={item.importSource} references={item.importReferences ?? []} />
+      )}
       <BoardCommandFields
         item={item}
         lanes={lanes}
@@ -337,7 +341,9 @@ function BoardCommandFields({
       <FieldSelect
         label="Lane"
         value={item.laneId ?? ''}
-        disabled={disabled}
+        disabled={
+          disabled || (item.importSource?.field === 'lane' && item.importSource.state === 'active')
+        }
         onChange={(value) => {
           onPatch({ laneId: value || null });
         }}

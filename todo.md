@@ -14,8 +14,8 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 | R6 | Complete billing production acceptance before enabling charges. | [Polar setup](docs/setup/polar.md): real webhook, shadow reconciliation period and invoice/member-access verification. Resolve or explicitly retain the provider's legacy customer-email limitation. No wallet/auto-reload flow is planned. |
 | R7 | Establish backup automation and recovery evidence. | [Operations](docs/operations.md): secondary object-storage copies, vector snapshots, Postgres retention, isolated restore drill, named operator and recurring schedule; cross-reference security gap G-06. |
 | R8 | Complete operational monitoring. | Queue/failure/retrieval freshness and provider-spend dashboards with actionable alerts, documented ownership and a tested response path. |
-
 | R9 | Verify the Drive project-field noise safeguard in production. | Deploy and capture a fresh Doc edit; the missed 9 November Doc event will not reappear on redeploy because its noise verdict advanced the comparison snapshot. See [Drive lifecycle](docs/architecture/drive.md). |
+| R10 | Verify one-way board imports against live providers. | Exercise a [disposable GitHub repository](docs/setup/github.md#import-repository-work-into-a-board) and a [HubSpot Free pipeline](docs/setup/hubspot.md#verify-on-hubspot-free) with the configured apps on a test HTTPS origin. |
 
 ## Product gaps
 
@@ -45,6 +45,7 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 | C6 | DCR registrations accumulate without grants. | Bounded cleanup of unused clients without deleting active grants or token evidence. |
 | C7 | A CRM/provider app listing is approved as product scope. | Separate reversible encrypted provider credentials and uninstall lifecycle; update disclosures before enabling write-back. Never reuse hashed MCP-server grants. |
 | C8 | Duplicate canonical names within a user-authored object type are needed. | Revisit the partial uniqueness constraint with migration-safe semantics; the current index and UI disambiguation remain intentional. |
+| C9 | Extend board imports after GitHub and HubSpot live acceptance. | Evaluate Linear issues and monday.com items using an explicit status-column mapping where needed. Attio is the next CRM candidate. See [integration surfaces](docs/integration-surfaces.md#give-a-native-source-a-board-workflow). |
 
 ## Product validation
 

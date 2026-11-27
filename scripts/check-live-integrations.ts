@@ -858,6 +858,12 @@ const oauthAuthorizeCanaries = [
     docs: 'docs/setup/github.md',
   },
   {
+    name: 'HubSpot OAuth authorize',
+    provider: 'hubspot',
+    envKeys: ['HUBSPOT_CLIENT_ID', 'HUBSPOT_CLIENT_SECRET'],
+    docs: 'docs/setup/hubspot.md',
+  },
+  {
     name: 'Monday OAuth authorize',
     provider: 'monday',
     envKeys: ['MONDAY_CLIENT_ID', 'MONDAY_CLIENT_SECRET'],

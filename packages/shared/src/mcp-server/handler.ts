@@ -167,7 +167,9 @@ const listCalendarEventsInput = z.object({
 });
 
 const listIntegrationsInput = z.object({
-  provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']).optional(),
+  provider: z
+    .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry', 'hubspot'])
+    .optional(),
 });
 
 const searchDocumentsInput = z.object({
@@ -183,7 +185,9 @@ const searchDocumentsInput = z.object({
 
 const searchIntegrationEventsInput = z.object({
   query: z.string().trim().min(1).max(500),
-  provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']).optional(),
+  provider: z
+    .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry', 'hubspot'])
+    .optional(),
   limit: z.number().int().min(1).max(20).optional(),
 });
 
@@ -241,7 +245,9 @@ const searchWorkspaceInput = z.object({
   archived: z.boolean().optional(),
   dueAfter: z.iso.datetime().optional(),
   dueBefore: z.iso.datetime().optional(),
-  provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']).optional(),
+  provider: z
+    .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry', 'hubspot'])
+    .optional(),
   boardId: z.string().regex(UUID_RE).optional(),
   templateKind: z.enum(['pipeline', 'task_board', 'catalog', 'custom']).optional(),
   pinned: z.boolean().optional(),
@@ -266,7 +272,9 @@ const getRecordInput = z
     ref: z.string().trim().min(1).max(500).optional(),
     name: z.string().trim().min(1).max(200).optional(),
     kind: z.enum(GET_KINDS).optional(),
-    provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']).optional(),
+    provider: z
+      .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry', 'hubspot'])
+      .optional(),
     externalObjectId: z.string().trim().min(1).max(512).optional(),
     historyLimit: z.number().int().min(1).max(50).optional(),
     momentId: z.string().trim().min(1).max(500).optional(),
@@ -1587,7 +1595,15 @@ async function executeReadCapability(
     case 'timeline.get_integration_resource': {
       const input = z
         .object({
-          provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']),
+          provider: z.enum([
+            'google_drive',
+            'linear',
+            'github',
+            'monday',
+            'slack',
+            'sentry',
+            'hubspot',
+          ]),
           externalObjectId: z.string().min(1).max(512),
           historyLimit: z.number().int().min(1).max(50).optional(),
         })

@@ -12,11 +12,13 @@ export const CONNECTOR_SLUGS = [
   'google-drive',
   'monday',
   'sentry',
+  'hubspot',
 ] as const;
 
 type ConnectorSlug = (typeof CONNECTOR_SLUGS)[number];
 
-type NativeProviderId = 'slack' | 'github' | 'linear' | 'google_drive' | 'monday' | 'sentry';
+type NativeProviderId =
+  'slack' | 'github' | 'linear' | 'google_drive' | 'monday' | 'sentry' | 'hubspot';
 
 interface ConnectorRecord {
   label: string;
@@ -259,6 +261,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'OAuth tokens and GitHub App credentials are encrypted at rest.',
     ],
     limitations: [
+      'Board imports are opt-in. A completed GitHub issue can complete its linked task, a closure marked not planned cancels it, and reopening returns it to To do. Enable merged PR tracking to record standalone merges as completed project tasks.',
       'A published GitHub release is publication evidence, not proof of a production deployment. This connector does not ingest GitHub deployment or environment records.',
       'Initial default-branch commit history is capped at 2,000 commits. If a repository has more, older commits are omitted and the current backfill does not resume past that cap.',
       'Other bounded GitHub scans also stop without continuing past 2,000 pull requests per state, 2,000 combined issue-endpoint entries, 2,000 releases or workflow runs per surface, and 2,000 review summaries per pull request. GitHub’s issues endpoint mixes issues and pull requests; Timeline filters PR entries only after fetching, so PRs consume the shared 2,000-entry scan budget and can leave fewer genuine issues. Issue and inline-review comment surfaces use a separate continuation path.',
@@ -699,6 +702,116 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       },
     ],
     related: ['github', 'slack', 'monday'],
+  },
+  {
+    slug: 'hubspot',
+    providerId: 'hubspot',
+    name: 'HubSpot',
+    eyebrow: 'Deal pipelines',
+    hero: 'Follow a HubSpot deal on your board.',
+    intro:
+      'Select a sales pipeline, review matches to your companies and deals, and choose which Timeline lane each deal stage controls.',
+    seoTitle: 'HubSpot integration for one-way deal pipeline sync',
+    seoDescription:
+      'Import a selected HubSpot pipeline into Timeline. Link existing company and deal records and keep board lanes aligned with deal stages.',
+    logo: '/connectors/hubspot.svg',
+    lightLogoTileInDarkMode: false,
+    capability: 'Native integration',
+    lastReviewed: '2026-11-26',
+    captureStatement:
+      'Timeline captures deal records and associated companies from selected pipelines.',
+    providerStatement:
+      'HubSpot controls deal stages. Edit a deal in HubSpot to move its synced card.',
+    diagram: {
+      question: 'Where is the Acme renewal?',
+      records: [
+        { label: 'Acme renewal', detail: 'Deal associated with Acme', time: 'Monday' },
+        { label: 'Proposal', detail: 'Deal entered proposal review', time: 'Tuesday' },
+        { label: 'Won', detail: 'HubSpot stage changed to won', time: 'Friday' },
+      ],
+      answer: 'The renewal reached Won on Friday.',
+      citations: ['Renewal deal', 'Proposal update', 'Won update'],
+    },
+    exampleQuestions: [
+      'Which deals changed stage?',
+      'Which company is associated with this renewal?',
+      'When did the deal reach Won?',
+      'Which source explains the card’s lane?',
+    ],
+    scenario: {
+      title: 'Follow a renewal',
+      situation: 'Acme already has a company record in Timeline.',
+      chronology: [
+        'A renewal appears in the selected pipeline.',
+        'The team confirms the existing company match.',
+        'Moving the deal in HubSpot moves its linked card.',
+      ],
+      result: 'One company and one renewal deal retain their source history.',
+    },
+    capturedRecords: [
+      'Deal identity and name',
+      'HubSpot deal URL',
+      'Selected pipeline',
+      'Current deal stage',
+      'Associated company identities and names',
+      'Observed departures from the selected pipeline',
+    ],
+    recipes: [
+      {
+        title: 'Import existing deals',
+        summary: 'Choose a pipeline and preview the deals it contains.',
+        sources: ['HubSpot'],
+      },
+      {
+        title: 'Reuse a company',
+        summary: 'Confirm the existing company when reviewing an import.',
+        sources: ['HubSpot', 'Timeline companies'],
+      },
+      {
+        title: 'Follow a stage change',
+        summary: 'Map the deal stage to a board lane during setup.',
+        sources: ['HubSpot', 'Timeline boards'],
+      },
+    ],
+    setup: [
+      'Connect your HubSpot account in Connections.',
+      'Share a deal pipeline and activate it for team capture.',
+      'Choose Import and keep in sync and select a board.',
+      'Review matches and lane mappings, then confirm the import.',
+    ],
+    permissions: [
+      'A member authorizes read access to deals and companies.',
+      'The connection owner selects which pipelines to share.',
+      'A team admin enables a board import.',
+      'Timeline writes synced fields inside the selected workspace.',
+    ],
+    limitations: [
+      'The first import covers current deals and stages. History starts when Timeline observes the pipeline.',
+      'Contacts, tickets and CRM notes fall outside this import.',
+      'Deals that leave the pipeline keep their card and history.',
+    ],
+    faqs: [
+      {
+        question: 'Can I use HubSpot Free?',
+        answer: 'A deal pipeline on HubSpot Free is sufficient for this workflow.',
+      },
+      {
+        question: 'Does connecting HubSpot populate a board?',
+        answer:
+          'Choose a board, review the import and confirm before Timeline applies board updates.',
+      },
+      {
+        question: 'Where do I move a synced deal?',
+        answer:
+          'Change its stage in HubSpot, or stop syncing its stage to move the Timeline card yourself.',
+      },
+      {
+        question: 'What if a company already exists?',
+        answer:
+          'Review the proposed company match and link it once. Subsequent imports reuse the confirmed identity.',
+      },
+    ],
+    related: ['github', 'linear', 'monday'],
   },
 ] as const;
 

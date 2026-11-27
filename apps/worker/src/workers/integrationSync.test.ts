@@ -344,6 +344,7 @@ beforeEach(() => {
   fakes.getProvider.mockImplementation((id: TimelineShared.integrations.NativeProviderId) => ({
     syncSelectionPolicy: {
       github: integrations.githubProvider,
+      hubspot: integrations.hubspotProvider,
       google_drive: integrations.googleDriveProvider,
       linear: integrations.linearProvider,
       monday: integrations.mondayProvider,

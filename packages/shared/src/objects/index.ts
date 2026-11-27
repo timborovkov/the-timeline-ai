@@ -90,6 +90,7 @@ import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-arti
 import { documentSummarySourcesAreCurrent } from '#src/documents/visibility.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { getEnv } from '#src/env.js';
+import { visibleImportSources } from '#src/integrations/import-sources.js';
 import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
@@ -1411,7 +1412,7 @@ export async function listObjects(
   scope: TeamScopeCore,
   filter: ObjectListFilter = {},
 ): Promise<ObjectRow[]> {
-  await scope.requireMembership();
+  const role = await scope.requireMembership();
   const conds = objectListConditions(scope, filter);
 
   const cursorSql = cursorCondition(filter.cursor, entities.updatedAt, entities.id);
@@ -1427,7 +1428,23 @@ export async function listObjects(
     .orderBy(...objectListOrder(filter))
     .limit(limit)
     .offset(offset);
-  return attachCommentCounts(db, scope, rows.map(toObjectRow));
+  const objects = rows.map(toObjectRow);
+  const sources = await visibleImportSources(
+    db,
+    scope.teamId,
+    scope.userId,
+    role,
+    'entity',
+    objects.filter((o) => o.type === 'task').map((o) => o.id),
+  );
+  const statusSources = new Map(
+    sources.filter((s) => s.field === 'status' && s.state === 'active').map((s) => [s.entityId, s]),
+  );
+  for (const object of objects) {
+    const source = statusSources.get(object.id);
+    if (source) object.statusSource = source;
+  }
+  return attachCommentCounts(db, scope, objects);
 }
 
 export async function listObjectsLinkedToIntegration(
@@ -3635,6 +3652,18 @@ export async function getObject(
   const commentCount = commentCountRows[0]?.count ?? notes.length;
 
   const base = toObjectRow(entityRow);
+  if (base.type === 'task') {
+    const links = await visibleImportSources(
+      db,
+      scope.teamId,
+      scope.userId,
+      await scope.requireMembership(),
+      'entity',
+      [base.id],
+    );
+    const source = links.find((link) => link.field === 'status' && link.state === 'active');
+    if (source) base.statusSource = source;
+  }
   const connectedWork = await getConnectedWork(db, scope, base);
   const provenance = await getObjectProvenance(db, scope, base, connectedWork);
   const relationships = [

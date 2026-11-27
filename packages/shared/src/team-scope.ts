@@ -55,6 +55,7 @@ import {
   type AcceptIngestWebhookEvidenceResult,
 } from '#src/ingest-webhooks/accept.js';
 import { createIngestWebhookScope } from '#src/ingest-webhooks/scope.js';
+import { createBoardImportScope } from '#src/integrations/board-imports.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import type { chatStructured } from '#src/llm/chat.js';
@@ -3614,6 +3615,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     objects: objectScope,
     conversations: conversationSurfaceScope,
     boards: boardScope,
+    boardImports: createBoardImportScope(db, core),
     boardQualification: createBoardQualificationScope(
       db,
       core,

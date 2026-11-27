@@ -281,3 +281,28 @@ async function markWebhookDeliveryTargetDone(
     })
     .where(and(eq(integrationWebhookDeliveryTargets.id, targetId), activeTargetTeam));
 }
+
+// A signed notification can cover several portals. Resolve each independently before enqueueing.
+export async function recordHubspotWakeup(db: Db, portal: string, key: string) {
+  const targets = await db
+    .select({
+      teamId: integrationsTable.teamId,
+      integrationId: integrationsTable.id,
+      providerConnectionId: integrationsTable.providerConnectionId,
+    })
+    .from(integrationsTable)
+    .where(
+      and(
+        eq(integrationsTable.provider, 'hubspot'),
+        eq(integrationsTable.externalAccountId, portal),
+        eq(integrationsTable.enabled, true),
+      ),
+    );
+  return recordWebhookDeliveryTargets(db, {
+    provider: 'hubspot',
+    externalAccountId: portal,
+    eventType: 'pipeline.refresh',
+    dedupKey: portal + ':' + key,
+    targets,
+  });
+}

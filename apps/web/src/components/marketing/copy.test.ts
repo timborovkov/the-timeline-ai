@@ -17,6 +17,7 @@ describe('public marketing copy', () => {
       'Telegram',
       'Google Drive',
       'GitHub',
+      'HubSpot',
       'Linear',
       'Monday.com',
       'Sentry',
@@ -27,6 +28,7 @@ describe('public marketing copy', () => {
       TELEGRAM_PAGE.route,
       '/integrations/google-drive',
       '/integrations/github',
+      '/integrations/hubspot',
       '/integrations/linear',
       '/integrations/monday',
       '/integrations/sentry',
@@ -54,11 +56,7 @@ describe('public marketing copy', () => {
     const comingSoonRoutes = WORKS_WITH_TOOLS.filter((tool) => tool.status === 'coming-soon').map(
       (tool) => tool.route,
     );
-    expect(comingSoonRoutes).toEqual([
-      '/integrations/hubspot',
-      '/integrations/attio',
-      '/integrations/pipedrive',
-    ]);
+    expect(comingSoonRoutes).toEqual(['/integrations/attio', '/integrations/pipedrive']);
     const navHrefs = new Set<string>(INTEGRATION_NAV_ITEMS.map((item) => item.href));
     for (const route of comingSoonRoutes) {
       expect(navHrefs.has(route)).toBe(false);

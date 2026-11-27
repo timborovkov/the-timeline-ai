@@ -11,9 +11,9 @@ import {
 } from '@/components/marketing/integrations/connector-content';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 describe('connector content manifest', () => {
-  it('exports exactly the six implemented native connector routes for public indexing', () => {
+  it('exports exactly the seven implemented native connector routes for public indexing', () => {
     expect(CONNECTORS.map((connector) => connector.slug)).toEqual(CONNECTOR_SLUGS);
-    expect(INDEXABLE_CONNECTOR_ROUTES).toHaveLength(6);
+    expect(INDEXABLE_CONNECTOR_ROUTES).toHaveLength(7);
     expect(new Set(INDEXABLE_CONNECTOR_ROUTES.map((route) => route.indexable))).toEqual(
       new Set([true]),
     );
@@ -27,6 +27,7 @@ describe('connector content manifest', () => {
       '/integrations/google-drive',
       '/integrations/monday',
       '/integrations/sentry',
+      '/integrations/hubspot',
     ]);
   });
 
@@ -45,8 +46,9 @@ describe('connector content manifest', () => {
       'Monday.com',
       'Slack',
       'Sentry',
+      'HubSpot',
     ]);
-    expect(capabilityTiers.plannedProviders).toContain('HubSpot');
+    expect(capabilityTiers.plannedProviders).not.toContain('HubSpot');
     expect(CONNECTOR_DIRECTORY_SUMMARY.planned.indexable).toBe(false);
   });
 

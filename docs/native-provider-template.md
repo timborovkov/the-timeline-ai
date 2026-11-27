@@ -9,6 +9,8 @@ This template is intentionally stricter than "make a provider file." A new
 provider is not ready until its policy, webhook posture, fallback sync path,
 tests, docs, and live canary story are explicit.
 
+For a new chat surface, a webhook-only source, or an optional board workflow on top of native capture, start with [integration surfaces](integration-surfaces.md#add-a-new-integration).
+
 ## 1. Decide The Provider Posture
 
 Add the provider to `NATIVE_PROVIDER_IDS`, `IntegrationProvider['id']`, the

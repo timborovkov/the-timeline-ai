@@ -97,7 +97,7 @@ const LANDING_SECTIONS = [
   },
   {
     title: 'Main capture surfaces',
-    body: 'Native surfaces include the web app, Telegram, Slack, inbound email, calendar, document uploads, meeting transcripts for Google Meet, Microsoft Teams, and Zoom, and first-party integrations for GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry. Native integrations create durable cited events; custom MCP servers cover long-tail live tool access without passive timeline ingestion by default.',
+    body: 'Native surfaces include the web app, Telegram, Slack, inbound email, calendar, document uploads, meeting transcripts for Google Meet, Microsoft Teams, and Zoom, and first-party integrations for GitHub, Linear, Google Drive, Monday.com, Slack workspace history, Sentry, and HubSpot pipelines. Native integrations create durable cited events; custom MCP servers cover long-tail live tool access without passive timeline ingestion by default.',
   },
 ] as const;
 
@@ -208,7 +208,7 @@ const coreDocuments = definePublicDocuments('public-core', [
           'Connected clients, projects, tasks and decisions from selected tools and sources',
           'Deliberate Telegram, Slack, email, meeting transcript, and webhook capture',
           'Cited status, handoffs, blockers, decisions, and commitments',
-          'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
+          'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, Sentry, and HubSpot',
           'Source, time, and visibility preserved with captured evidence',
           'Human approval before inferred durable workspace changes',
         ],

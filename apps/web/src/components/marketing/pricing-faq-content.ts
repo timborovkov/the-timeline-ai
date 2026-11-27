@@ -32,7 +32,7 @@ export const PRICING_FAQS = [
   {
     question: 'I already use HubSpot / Jira / Linear.',
     answer:
-      'Keep them. Linear already syncs selected issues into The Timeline. Jira can be looked up live through Atlassian MCP. HubSpot, Attio and Pipedrive native ingest is coming soon. Timeline does not replace those tools or sync HubSpot today.',
+      'Linear syncs selected issues. Jira supports live lookup through Atlassian MCP. HubSpot supports one-way imports of selected deal pipelines. Native Attio and Pipedrive ingest is planned.',
   },
   {
     question: 'How is my data used?',

@@ -243,9 +243,9 @@ describe('public integration routes', () => {
     const hubspot = await connectorRoute.generateMetadata({
       params: Promise.resolve({ slug: 'hubspot' }),
     });
-    expect(hubspot.title).toBe('HubSpot and The Timeline');
+    expect(hubspot.title).toBe('HubSpot integration for one-way deal pipeline sync');
     expect(hubspot.alternates).toEqual({ canonical: '/integrations/hubspot' });
-    expect(hubspot.robots).toEqual({ index: false, follow: false });
+    expect(hubspot.robots).toMatchObject({ googleBot: { 'max-image-preview': 'large' } });
   });
 
   it.each(WORKS_WITH_PAGE_TOOLS)('renders $route with honest status and guidance', async (tool) => {

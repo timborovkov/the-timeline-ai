@@ -113,27 +113,22 @@ export const WORKS_WITH_TOOLS: readonly WorksWithTool[] = [
     slug: 'hubspot',
     route: '/integrations/hubspot',
     name: 'HubSpot',
-    navLabel: 'HubSpot · Coming soon',
+    navLabel: 'HubSpot · Native sync',
     logo: '/connectors/hubspot.svg',
-    status: 'coming-soon',
-    statusLabel: 'Coming soon',
-    title: 'Keep HubSpot. Connect the context.',
-    summary:
-      'If HubSpot already holds the pipeline, keep it. The Timeline writes down what was said in Slack or Telegram, email and calls, so a promise is not only a CRM note.',
-    seoTitle: 'HubSpot and The Timeline',
-    seoDescription:
-      'Keep HubSpot as the CRM. The Timeline covers the conversation record from Slack, Telegram, email and calls. Native HubSpot ingest is coming soon and is not available today.',
+    status: 'native-sync',
+    statusLabel: 'Native sync',
+    title: 'Follow HubSpot deals on your board.',
+    summary: 'Import a selected deal pipeline and map stages to Timeline lanes.',
+    seoTitle: 'HubSpot integration for one-way deal pipeline sync',
+    seoDescription: 'Import selected deals and associated companies.',
     howItPlugsIn:
-      'Today HubSpot does not sync into The Timeline. People, company and deal records can still live in Timeline from the conversation record while HubSpot stays your CRM. Native company, contact, deal, ticket, note and pipeline-event ingest is planned.',
-    today:
-      'Send work to Timeline from Slack, Telegram, email and calls. Ask what was promised, with the source for every line. Timeline does not sync HubSpot companies, contacts, deals or tickets.',
-    later:
-      'Native HubSpot ingest is coming soon. Until it ships, there is no HubSpot MCP lookup and no HubSpot history in the work record.',
+      'Connect HubSpot and share a pipeline. A team admin can preview and confirm a board import.',
+    today: 'HubSpot pipeline changes can update a linked deal card in Timeline.',
+    later: 'Keep managing the sales pipeline in HubSpot.',
     gettingStarted:
-      'You may not need HubSpot in Timeline yet. Start with one Slack channel or Telegram group. Add a CRM connection later if pipeline objects should join that chronology.',
-    whenAloneBetter:
-      'Stay in HubSpot alone when the CRM is the whole job: pipeline, contacts and the HubSpot workflows you already run. The Timeline is the conversation record around that work, and it does not sync HubSpot today.',
-    nativeConnector: false,
+      'You may not need to import every pipeline. Start with the one your team reviews together.',
+    whenAloneBetter: 'Stay in HubSpot alone when you only need to maintain the CRM pipeline.',
+    nativeConnector: true,
   },
   {
     slug: 'attio',

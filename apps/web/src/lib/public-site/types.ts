@@ -18,6 +18,7 @@ export const NATIVE_INGESTION_PROVIDERS = [
   'monday',
   'slack',
   'sentry',
+  'hubspot',
 ] as const;
 
 export const PUBLIC_LLM_SECTIONS = [

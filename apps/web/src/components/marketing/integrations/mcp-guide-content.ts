@@ -34,7 +34,7 @@ export const MCP_GUIDE_PAGE = {
   summary: 'Give The Timeline Agent live access to tools you connect.',
   seoTitle: 'Connect MCP tools to The Timeline Agent',
   seoDescription:
-    'Connect third-party MCP servers so The Timeline Agent can call live tools. This is distinct from native Slack, Telegram, Drive, GitHub, Linear, Monday.com, and Sentry sync, and from external agents that consume Timeline over MCP.',
+    'Connect third-party MCP servers so The Timeline Agent can call live tools. This is distinct from native Slack, Telegram, Drive, GitHub, HubSpot, Linear, Monday.com, and Sentry sync, and from external agents that consume Timeline over MCP.',
   lastReviewed: REVIEW_DATE,
   screenshot: {
     file: '19-agent-tools-dark.png',
@@ -79,7 +79,7 @@ export const MCP_GUIDE_PAGE = {
   },
   notNative: {
     title: 'Not native sync or capture',
-    body: 'Native Slack, Google Drive, GitHub, Linear, Monday.com, and Sentry connections, plus Telegram capture, write selected records into Timeline over time. MCP tools do not replace that. If Ask should look something up live in another product, connect an MCP server. If that product’s history should sit in the work record, you need a native integration or another capture path.',
+    body: 'Native Slack, Google Drive, GitHub, HubSpot, Linear, Monday.com, and Sentry connections, plus Telegram capture, write selected records into Timeline over time. MCP tools do not replace that. If Ask should look something up live in another product, connect an MCP server. If that product’s history should sit in the work record, you need a native integration or another capture path.',
   },
   limits: {
     title: 'What this page does not claim',

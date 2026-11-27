@@ -302,6 +302,9 @@
   "apps/web/src/app/api/webhooks/ingest/route.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/api/webhooks/hubspot/route.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/api/webhooks/linear/route.test.ts": {
     "group": "unit"
   },
@@ -2110,6 +2113,9 @@
     "group": "unit"
   },
   "packages/shared/src/integrations/providers/google-drive.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/providers/hubspot.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/integrations/providers/linear.test.ts": {

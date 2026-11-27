@@ -42,6 +42,7 @@ export const integrationProvider = pgEnum('integration_provider', [
   'monday',
   'slack',
   'sentry',
+  'hubspot',
   'mcp',
 ]);
 

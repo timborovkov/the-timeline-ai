@@ -483,16 +483,23 @@ async function proposeGithubTaskUpdates(input: {
   restrictToObjectId?: string;
 }): Promise<number> {
   if (input.sources.length === 0) return 0;
+  const scope = withTeam(input.db, input.teamId, PSEUDO_USER, { skipMembershipCheck: true });
+  const handled = new Set(
+    await scope.boardImports.handledEvents(
+      input.sources.filter((s) => s.workItem.provider === 'github').map((s) => s.rawEventId),
+    ),
+  );
+  const sources = input.sources.filter((s) => !handled.has(s.rawEventId));
+  if (!sources.length) return 0;
   const [tasks, pendingCreates, members, githubLoginsByUserId] = await Promise.all([
-    loadOpenTaskCandidates(input.db, input.teamId, input.sources, input.restrictToObjectId ?? null),
+    loadOpenTaskCandidates(input.db, input.teamId, sources, input.restrictToObjectId ?? null),
     loadPendingTaskCreates(input.db, input.teamId),
     loadTeamMembers(input.db, input.teamId),
     loadGithubLoginsByUserId(input.db, input.teamId),
   ]);
 
-  const scope = withTeam(input.db, input.teamId, PSEUDO_USER, { skipMembershipCheck: true });
   let created = 0;
-  for (const source of input.sources) {
+  for (const source of sources) {
     const entityMatches = matchOpenTasksToCapturedWorkItem(
       source.workItem,
       tasks,
@@ -990,9 +997,6 @@ function shouldProposeDone(workItem: CapturedWorkItem): boolean {
   if (workItem.github?.kind === 'pull_request') {
     return workItem.eventType === 'pr.merged' || workItem.status === 'done';
   }
-  if (workItem.github?.kind === 'issue') {
-    return workItem.eventType === 'issue.closed' || workItem.status === 'done';
-  }
   return workItem.status === 'done';
 }
 
@@ -1181,7 +1185,9 @@ function githubWorkItemStatus(
     if (eventType === 'pr.closed' || stringValue(github.state) === 'closed') return 'cancelled';
     return 'open';
   }
-  if (eventType === 'issue.closed' || stringValue(github.state) === 'closed') return 'done';
+  if (eventType === 'issue.closed' || stringValue(github.state) === 'closed') {
+    return github.state_reason === 'not_planned' ? 'cancelled' : 'done';
+  }
   return 'open';
 }
 

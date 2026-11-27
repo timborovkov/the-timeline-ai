@@ -16,7 +16,15 @@ export const dynamic = 'force-dynamic';
 
 const log = childLogger('web:api:integrations:start');
 
-const PROVIDER_VALUES = ['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry'] as const;
+const PROVIDER_VALUES = [
+  'google_drive',
+  'linear',
+  'github',
+  'monday',
+  'slack',
+  'sentry',
+  'hubspot',
+] as const;
 const PROVIDERS = new Set<string>(PROVIDER_VALUES);
 
 const stateSchema = z.object({

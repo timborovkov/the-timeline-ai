@@ -44,7 +44,7 @@ export interface TimelineSourceFacet {
 }
 
 export interface ListIntegrationSearchEventIdsInput {
-  provider?: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
+  provider?: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry' | 'hubspot';
   mondayBoardIds?: string[];
   mondayDocIds?: string[];
   limit: number;

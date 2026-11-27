@@ -43,6 +43,7 @@ import {
   type DueDateCalendarSyncResult,
 } from '#src/calendar/due-dates.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
+import { visibleImportSources, type ImportSource } from '#src/integrations/import-sources.js';
 import { childLogger } from '#src/logger.js';
 import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
 import type {
@@ -136,6 +137,8 @@ export interface BoardLaneRow {
 }
 
 export interface BoardItemRow {
+  importSource?: ImportSource;
+  importReferences?: ImportSource[];
   id: string;
   boardId: string;
   entityId: string;
@@ -1027,6 +1030,28 @@ export function createBoardScope({
     return toBoardItemChangeRow(row);
   }
 
+  async function addImportSources(rows: BoardItemRow[], query: DbOrTx, role: string) {
+    const links = await visibleImportSources(
+      query,
+      scope.teamId,
+      scope.userId,
+      role,
+      'item',
+      rows.map((row) => row.id),
+    );
+    const byItem = new Map<string, ImportSource[]>();
+    for (const link of links) {
+      if (!link.itemId) continue;
+      const sources = byItem.get(link.itemId) ?? [];
+      sources.push(link);
+      byItem.set(link.itemId, sources);
+    }
+    return rows.map((row) => {
+      const [source, ...references] = byItem.get(row.id) ?? [];
+      return source ? { ...row, importSource: source, importReferences: references } : row;
+    });
+  }
+
   async function itemWithObject(itemId: string, query: DbOrTx = db): Promise<BoardItemRow | null> {
     const rows = await query
       .select({ item: boardItems, object: entities })
@@ -1297,7 +1322,7 @@ export function createBoardScope({
     },
 
     async getBoard(boardId: string, options: BoardReadOptions = {}): Promise<BoardDetail | null> {
-      await scope.requireMembership();
+      const role = await scope.requireMembership();
       if (!UUID_RE.test(boardId)) return null;
       const itemLimit =
         options.itemLimit === 'all'
@@ -1372,7 +1397,11 @@ export function createBoardScope({
           new Set(pins.map((pin) => pin.boardId)),
         ),
         lanes: lanes.map(toLaneRow),
-        items: rows.map((row) => toItemRow(row.item, row.object)),
+        items: await addImportSources(
+          rows.map((row) => toItemRow(row.item, row.object)),
+          db,
+          role,
+        ),
       };
     },
 
@@ -1417,10 +1446,12 @@ export function createBoardScope({
     },
 
     async getBoardItem(itemId: string): Promise<BoardItemRow | null> {
-      await scope.requireMembership();
+      const role = await scope.requireMembership();
       if (!UUID_RE.test(itemId)) return null;
       const item = await itemWithObject(itemId);
-      return item && !item.archivedAt ? item : null;
+      return item && !item.archivedAt
+        ? ((await addImportSources([item], db, role))[0] ?? null)
+        : null;
     },
 
     async createBoard(input: CreateBoardInput): Promise<BoardDetail> {
