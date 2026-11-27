@@ -27,8 +27,19 @@ interface EvidenceSource {
 export function repairEvidencePassages(
   evidence: EvidenceSource[],
   names: string[],
+  otherEndpointNames?: string[],
 ): EvidenceSource[] {
   const pattern = evidenceNamePattern(names);
+  // A relationship citation must identify both endpoints in one quote (at most
+  // 1,000 characters), even when the extracted fact paraphrases that quote.
+  const endpoint = otherEndpointNames && evidenceNamePattern(otherEndpointNames);
+  const near = '[\\s\\S]{0,1000}?';
+  const pair =
+    endpoint &&
+    new RegExp(
+      `(?:${pattern.source})${near}(?:${endpoint.source})|(?:${endpoint.source})${near}(?:${pattern.source})`,
+      'giu',
+    );
   const sources = evidence.flatMap((source) => {
     pattern.lastIndex = 0;
     const first = pattern.exec(source.text);
@@ -37,9 +48,14 @@ export function repairEvidencePassages(
   const budget = Math.min(6000, Math.floor(48000 / Math.max(1, sources.length)));
   return sources.flatMap(({ rawEventId, text, first, factStatements }) => {
     if (text.length <= budget) return [{ rawEventId, text }];
-    let last = first;
-    pattern.lastIndex = first;
-    for (const match of text.matchAll(pattern)) last = match.index;
+    let firstFocus: number | undefined;
+    let lastFocus = first;
+    const focus = pair ?? pattern;
+    focus.lastIndex = 0;
+    for (const match of text.matchAll(focus)) {
+      lastFocus = pair ? match.index + Math.floor(match[0].length / 2) : match.index;
+      firstFocus ??= lastFocus;
+    }
     const positions = new Set<number>();
     for (const statement of factStatements ?? []) {
       if (!statement.trim()) continue;
@@ -47,15 +63,18 @@ export function repairEvidencePassages(
       if (index >= 0) positions.add(index);
       if (positions.size >= 3) break;
     }
-    positions.add(first);
-    positions.add(last);
+    positions.add(firstFocus ?? first);
+    positions.add(lastFocus);
     const sorted = [...positions].sort((a, b) => a - b);
     // Nearby matches share a passage. Allocate the source's budget across
     // distinct locations, retaining the original bytes even at the boundaries.
     const width = Math.floor(budget / sorted.length);
     const windows: { start: number; end: number }[] = [];
     for (const index of sorted) {
-      const start = Math.max(0, Math.min(index - Math.floor(width / 3), text.length - width));
+      const start = Math.max(
+        0,
+        Math.min(index - Math.floor(width / (pair ? 2 : 3)), text.length - width),
+      );
       const previous = windows.at(-1);
       if (previous && start <= previous.end) previous.end = start + width;
       else windows.push({ start, end: start + width });

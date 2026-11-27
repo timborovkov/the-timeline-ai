@@ -2916,7 +2916,7 @@ describe('processSuggestionJobForTests', () => {
         {
           teamId: TEAM_ID,
           rawEventId: newerRaw.id,
-          statement: 'Jonne from DFK owns the pilot follow-up.',
+          statement: 'Jonne is responsible for a DFK pilot.',
           confidence: 0.9,
           modelVersion: 'test',
           extractedAt: new Date('2026-06-18T10:00:00.000Z'),
@@ -3179,7 +3179,7 @@ describe('processSuggestionJobForTests', () => {
           teamId: TEAM_ID,
           type: 'project',
           canonicalName: 'Customer Portal',
-          aliases: ['PBC-portaali'],
+          aliases: ['PBC‑portaali'],
         },
         {
           id: personId,

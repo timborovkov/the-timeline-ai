@@ -450,7 +450,7 @@ Each active object receives scoped duplicate, relationship and low-signal review
 Name similarity and shared fact attachments can retrieve candidates. A merge requires
 a matching identity or approved alias, or source-backed semantic equivalence.
 For relationship repair the model must cite an affirmative passage identifying both
-records. In long sources, mentions of the related record and verbatim linked facts locate passages anywhere in the original text. A denied partnership or a month in a task title supplies no relationship.
+records. In long sources, nearby mentions of both records and verbatim linked facts locate passages anywhere in the original text. A denied partnership or a month in a task title supplies no relationship.
 Name filtering preserves letters across scripts in ingest and cleanup. Extraction
 keeps business outcomes mentioned alongside a file transfer.
 Cleanup skips a generic relationship between the endpoints of a pending merge.

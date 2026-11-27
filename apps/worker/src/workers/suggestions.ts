@@ -2174,6 +2174,7 @@ async function supportedRepairRelationships(
         },
       ],
       relatedNames,
+      names,
     );
     return passages.map(({ rawEventId, text }) => ({
       candidate,
@@ -2815,7 +2816,14 @@ async function qualifyPersonAndProjectCreates(
             canonicalName: name,
             metadata: objectCreate ? item.proposedPayload.metadata : undefined,
           };
-          if (!record || !suggestions.identityMatchReason(subject, record)) continue;
+          if (
+            !record ||
+            !rawCleanupNames(record).some(
+              (registered) => registered.toLowerCase() === name.toLowerCase(),
+            ) ||
+            !suggestions.identityMatchReason(subject, record)
+          )
+            continue;
           sourceNames = [];
           for (const alias of new Set(rawCleanupNames(record))) {
             if (
