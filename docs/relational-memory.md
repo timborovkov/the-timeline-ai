@@ -119,7 +119,9 @@ Conversation reviews collect bounded related messages and propose concrete chang
 For sources outside the communication and meeting audits, the model verifies new
 Person and Project proposals, including projects created with a task, against the item's source evidence. A Person needs evidence identifying a human.
 A named initiative needs evidence of project work. A spreadsheet title alone is
-insufficient. Enforced evidence packs restrict this check to the item's cited rows.
+insufficient. Name matching accepts typographic apostrophe and dash variants. The citation must still be an exact passage from the source. Enforced evidence packs restrict this check to the item's cited rows.
+
+A source-wide tracker key can enrich a single proposed task. Across multiple tasks, the key must identify one of the items to qualify for automatic attachment.
 
 Pending proposals are living review objects: supported refinements amend or supersede the pending change rather than creating duplicate approvals. Preserve accumulated evidence, avoid guessed identity and distinguish a changed time from a different event. Accepted records are not silently rewritten when a later event arrives; propose another change or use the authorized repair path.
 
@@ -149,7 +151,9 @@ Generic ingest webhooks are evidence-only
 
 The suggestion worker can approve eligible items from checked, team-visible conversations and meeting transcripts through transactional acceptance. Grounded record changes can include creation and explicit renames, recognized lifecycle states, and assignment and deadlines for tasks and follow-ups. A confirmed offer sent for an identified deal advances its status to proposal. An explicitly named deal stage can be recorded separately. Grounded links can apply once both endpoints resolve to active records. An addition that would replace an existing primary project or company requires review. Planned dates and selective undo apply to tasks. Other items in the same bundle retain their own review requirements. A workspace admin can require review before evidence replaces a manually set record value. Explicit archive and merge requests from active members in Slack require review unless separately enabled by an admin. Automatic merges also require matching provider identity and follow the object merge engine’s type and dependency restrictions. The engine excludes tasks and follow-ups. Other unsupported or ambiguous changes continue through the review queue. A policy change checks existing pending approvals under the current policy, with a daily recovery pass if immediate scheduling fails. Automatic application retains the approval item and its policy revision. Undo records a new human correction when the original automatic change is still the latest write to each affected task field.
 
-A task can have a planned work day independent of its deadline. The planned date is a calendar date and does not produce a calendar event or a deadline notification. When ordinary ingest returns no model proposals, the event-local fallback requires an explicit decision or actionable request. A ticket reference, pending decision or quoted example supplies no commitment. Only an attributable first-person commitment can supply its author as owner. The fallback resolves relative dates from the source occurrence time in the workspace zone. In that fallback, “next Friday” means the first Friday strictly after the source’s local date. A short task reference must identify one active task through visible evidence. A date-only correction such as “Actually, Monday” can use the preceding accepted plan when the visible conversation and the plan still identify the same task and field.
+The communication completeness audit receives field-level feedback when a draft task's date, assignment or status failed source verification. Its final output still passes independent field checks. A direct request such as “Could someone send the estimate by Friday?” can establish a day-only deadline at local midnight while leaving the task unassigned.
+
+A task can have a planned work day independent of its deadline. For ordinary event-local creates, a single task can retain the planned day of a matching explicit commitment at the end of the source. The planned date is a calendar date and does not produce a calendar event or a deadline notification. When ordinary ingest returns no model proposals, the event-local fallback requires an explicit decision or actionable request. The fallback evaluates independent statements separately. A confirmed decision heading or an explicit decision against an action can support a decision. An unrelated cancellation leaves a separate commitment eligible. A ticket reference, pending decision or quoted example supplies no commitment. Only an attributable first-person commitment can supply its author as owner. The fallback resolves relative dates from the source occurrence time in the workspace zone. In that fallback, “next Friday” means the first Friday strictly after the source’s local date. A short task reference must identify one active task through visible evidence. A date-only correction such as “Actually, Monday” can use the preceding accepted plan when the visible conversation and the plan still identify the same task and field.
 
 Reviewers can reject one or several proposals with an optional standard reason.
 The decision and reason are saved together. For visible stale evidence,
@@ -449,9 +453,14 @@ For relationship repair the model must cite an affirmative passage identifying b
 records. A denied partnership or a month in a task title supplies no relationship.
 Name filtering preserves letters across scripts in ingest and cleanup. Extraction
 keeps business outcomes mentioned alongside a file transfer.
-For a missing Person, semantic identity review examines up to three team-visible sources
-linked to the object by extracted facts. The model must identify an individual by
-full name and cite a passage that connects them to the selected object or an alias.
+Cleanup skips a generic relationship between the endpoints of a pending merge.
+For a missing Person, semantic identity review considers the latest 80 team-visible
+source rows linked to the object by extracted facts. It shares a 48,000-character
+budget across matching sources, up to 6,000 characters each. In longer sources,
+name mentions and verbatim linked facts locate excerpts of the original text.
+The model must identify an individual by full name and cite a passage that
+connects them to the selected object or an alias. A one-word name needs an
+explicit statement in the source that it is the person's complete name.
 The worker checks the passage against the original source and includes it in the
 approval bundle for the Person and relationship. Ambiguous file titles, bare first
 names and unavailable semantic review produce no missing-Person proposal.

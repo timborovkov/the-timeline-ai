@@ -42,6 +42,7 @@ import {
   assembleSuggestionPrompt,
   preserveDocumentPersonEmails,
   fallbackBundles,
+  verifyEventLocalPlans,
   processSuggestionJobForTests as processRealSuggestionJobForTests,
   SUGGESTION_PROMPT_MAX_INPUT_TOKENS,
   usableRawEventIds,
@@ -322,6 +323,9 @@ describe('fallbackBundles', () => {
   });
 
   it.each([
+    'I will send the contract tomorrow. Actually, I will not send the contract.',
+    'I will send the contract tomorrow. This task was cancelled.',
+    'Training example:\nI will send the contract tomorrow.',
     'Decision: still pending. Nobody has chosen a supplier.',
     'For reference only: ENG-42. It was closed last week. No action is requested.',
     'ENG-42 is in the archive.',
@@ -341,6 +345,70 @@ describe('fallbackBundles', () => {
         authorUserId: OWNER_ID,
       }),
     ).toEqual([]);
+  });
+
+  it.each([
+    [
+      'Decision: use Larch as the shipping provider. The vote is final.',
+      ['Use Larch as the shipping provider'],
+    ],
+    [
+      'The meeting was cancelled. I will send the revised estimate tomorrow.',
+      ['Send the revised estimate'],
+    ],
+    [
+      'We decided not to renew the office lease. I will notify the landlord tomorrow.',
+      ['Not to renew the office lease', 'Notify the landlord'],
+    ],
+    [
+      'Can you take ENG-77 after QA? Please follow up on the failed export.',
+      ['Take ENG-77 after QA'],
+    ],
+  ] as const)('retains distinct supported actions in %s', (text, titles) => {
+    const bundles = fallbackBundles({
+      text,
+      timezone: 'UTC',
+      occurredAt: REFERENCE_DATE,
+      authorUserId: OWNER_ID,
+    });
+    expect(bundles.map((bundle) => bundle.items[0]?.title)).toEqual([...titles]);
+    for (const bundle of bundles) {
+      expect(text).toContain(bundle.quote ?? '');
+      if (text.startsWith('Can you'))
+        expect(bundle.items[0]?.proposedPayload).not.toHaveProperty('ownerUserId');
+    }
+  });
+
+  it('verifies an ordinary draft work day against a unique literal commitment and removes the invented deadline', () => {
+    const draft = (canonicalName: string) => ({
+      title: canonicalName,
+      confidence: 'high' as const,
+      items: [
+        {
+          operation: 'create' as const,
+          targetKind: 'task' as const,
+          title: canonicalName,
+          proposedPayload: {
+            canonicalName,
+            plannedDate: '2026-05-28',
+            dueAt: '2026-05-28T17:00:00Z',
+          },
+        },
+      ],
+    });
+    const source = {
+      text: 'The meeting was cancelled. I will send the revised estimate tomorrow.',
+      timezone: 'UTC',
+      occurredAt: REFERENCE_DATE,
+      authorUserId: OWNER_ID,
+    };
+    const retained = draft('Send revised estimate');
+    verifyEventLocalPlans([retained], source);
+    expect(retained.items[0]?.proposedPayload).toHaveProperty('plannedDate', '2026-05-28');
+    expect(retained.items[0]?.proposedPayload).not.toHaveProperty('dueAt');
+    const unrelated = draft('Send customer invoice');
+    verifyEventLocalPlans([unrelated], source);
+    expect(unrelated.items[0]?.proposedPayload).not.toHaveProperty('plannedDate');
   });
 
   it('still supports next weekday phrases', () => {
@@ -980,7 +1048,7 @@ describe('processSuggestionJobForTests', () => {
       .limit(1);
     expect(row?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'integration_structured_source',
-      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v4-evidence`,
     });
     expect(row?.sourceMetadata).toHaveProperty('suggestions_skipped_at');
   });
@@ -1439,7 +1507,7 @@ describe('processSuggestionJobForTests', () => {
       .limit(1);
     expect(row?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'ingest_webhook_proposals_disabled',
-      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v4-evidence`,
     });
     expect(row?.sourceMetadata).toHaveProperty('suggestions_skipped_at');
   });
@@ -1482,7 +1550,7 @@ describe('processSuggestionJobForTests', () => {
       .limit(1);
     expect(row?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'ingest_webhook_proposals_disabled',
-      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v4-evidence`,
     });
   });
 
@@ -2450,6 +2518,33 @@ describe('processSuggestionJobForTests', () => {
       { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
     );
 
+    // A later scoped cleanup sees the pending merge from the manual scan.
+    const reviewRelationship = vi
+      .fn()
+      .mockResolvedValue({
+        model: MODEL_ID,
+        object: {
+          supported: [
+            { index: 0, quote: 'DFK and DFK Finland Oy are both involved in the pilot.' },
+          ],
+        },
+      });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: fullName.id,
+        triggeredBy: 'memory_repair',
+      },
+      {
+        getEnv: () =>
+          ({ IDENTITY_SEMANTIC_ENABLED: true, OPENROUTER_API_KEY: 'test-key' }) as never,
+        chatStructured: vi.fn().mockResolvedValue({ model: MODEL_ID, object: { people: [] } }),
+        reviewProposalEvidence: reviewRelationship,
+      },
+    );
+    expect(reviewRelationship).not.toHaveBeenCalled();
     const bundles = await withTeam(
       db as never,
       TEAM_ID,
@@ -3325,7 +3420,14 @@ describe('processSuggestionJobForTests', () => {
         teamId: TEAM_ID,
         authorUserId: OWNER_ID,
         source: 'integration',
-        contentText: statement + ' ' + quote,
+        contentText:
+          'DFK administrative notes. ' +
+          'Filed. '.repeat(1000) +
+          statement +
+          ' ' +
+          quote +
+          ' Filed.'.repeat(1000) +
+          ' DFK.',
         occurredAt: REFERENCE_DATE,
         visibility: 'team',
       })
@@ -3981,7 +4083,7 @@ describe('processSuggestionJobForTests', () => {
 
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(event?.sourceMetadata).toMatchObject({
-      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
+      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-11-engine-v4-evidence`,
     });
     expect(event?.sourceMetadata).toHaveProperty('suggestions_pre_extracted_at');
   });
@@ -8365,7 +8467,7 @@ describe('processSuggestionJobForTests', () => {
     const [event] = await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId));
     expect(event?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v4-evidence`,
     });
   });
 
@@ -11327,11 +11429,11 @@ describe('processSuggestionJobForTests', () => {
       .from(rawEvents);
     expect(skipped.find((row) => row.id === privateEventId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v4-evidence`,
     });
     expect(skipped.find((row) => row.id === specificEventId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=specific_users',
-      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v4-evidence`,
     });
   });
 
@@ -11367,11 +11469,11 @@ describe('processSuggestionJobForTests', () => {
       .from(rawEvents);
     expect(skipped.find((row) => row.id === inactivePrivateId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v4-evidence`,
     });
     expect(skipped.find((row) => row.id === emptySpecificId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=specific_users',
-      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v4-evidence`,
     });
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
   });
@@ -11400,7 +11502,7 @@ describe('processSuggestionJobForTests', () => {
       .update(rawEvents)
       .set({
         sourceMetadata: {
-          suggestion_pre_extract_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
+          suggestion_pre_extract_model_version: `${MODEL_ID}@2026-11-engine-v4-evidence`,
           suggestions_pre_extracted_at: '2026-05-27T10:00:00.000Z',
           extracted_at: '2026-05-27T10:01:00.000Z',
           extraction_model_version: 'test-extract@1',
@@ -11420,8 +11522,8 @@ describe('processSuggestionJobForTests', () => {
     );
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(event?.sourceMetadata).toMatchObject({
-      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
-      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
+      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-11-engine-v4-evidence`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v4-evidence`,
     });
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 1 });
   });

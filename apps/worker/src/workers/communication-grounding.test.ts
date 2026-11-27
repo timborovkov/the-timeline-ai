@@ -4114,3 +4114,17 @@ test('grounds the written date in a reschedule and rejects a contradicted weekda
     }),
   ).toEqual({ items: [], proof: undefined });
 });
+
+test('grounds the day-only deadline of a direct courteous request while preserving uncertainty', () => {
+  const dueAt = '2026-06-04T21:00:00.000Z';
+  for (const [text, expected] of [
+    ['Could someone review retention policy by Friday?', dueAt],
+    ['Could someone maybe review retention policy by Friday?', undefined],
+    ['Could someone review retention policy by Friday if legal approves?', undefined],
+  ] as const) {
+    const [bundle] = run(text, { dueAt }, [support('dueAt', text, dueAt)], {
+      timezone: 'Europe/Helsinki',
+    });
+    expect(bundle?.items[0]?.proposedPayload.dueAt).toBe(expected);
+  }
+});

@@ -535,7 +535,7 @@ maybeDescribe('live suggestion worker evals', () => {
     expect(isRecord(sourceMetadata)).toBe(true);
     if (!isRecord(sourceMetadata)) throw new Error('expected raw event source metadata');
     expect(sourceMetadata.suggestion_pre_extract_model_version).toMatch(
-      /@2026-11-engine-v3-recall$/,
+      /@2026-11-engine-v4-evidence$/,
     );
     expect(typeof sourceMetadata.suggestions_pre_extracted_at).toBe('string');
   }, 240_000);
