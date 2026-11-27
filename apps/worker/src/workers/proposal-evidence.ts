@@ -1,19 +1,26 @@
 // Keep character offsets in the original source. Only typographical variants of
 // the same punctuation are interchangeable when locating a proposed name.
 export function evidenceNamePattern(names: readonly string[]): RegExp {
-  const alternatives = names.filter(Boolean).map((name) =>
-    name
+  const unspaced =
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+  const word = '[\\p{L}\\p{M}\\p{N}]';
+  const alternatives = names.filter(Boolean).map((name) => {
+    const start = unspaced.test(/^./u.exec(name)?.[0] ?? '') ? '' : `(?<!${word})`;
+    const end = unspaced.test(/.$/u.exec(name)?.[0] ?? '') ? '' : `(?!${word})`;
+    const literal = name
       .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       .replace(/['‘’]/g, "['‘’]")
-      .replace(/[-‐‑‒–—]/g, '[-‐‑‒–—]'),
-  );
-  return new RegExp(
-    `(?<![\\p{L}\\p{M}\\p{N}])(?:${alternatives.join('|') || '(?!)'})(?![\\p{L}\\p{M}\\p{N}])`,
-    'giu',
-  );
+      .replace(/[-‐‑‒–—]/g, '[-‐‑‒–—]');
+    return start + literal + end;
+  });
+  return new RegExp(alternatives.join('|') || '(?!)', 'giu');
 }
 
-type EvidenceSource = { rawEventId: string; text: string; factStatements?: string[] };
+interface EvidenceSource {
+  rawEventId: string;
+  text: string;
+  factStatements?: string[];
+}
 
 /** Distribute the prompt across linked sources so a few long or recent notes
  * cannot consume it. Every excerpt is one contiguous slice of the original. */

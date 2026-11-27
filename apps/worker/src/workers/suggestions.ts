@@ -54,7 +54,6 @@ import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
-import { evidenceNamePattern, repairEvidencePassages } from '#src/workers/proposal-evidence.js';
 import { finishIngestJob } from '#src/ingest-job-result.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
@@ -84,6 +83,7 @@ import {
   isHumanCommunication,
   REPORTED_TASK_POLICY,
 } from '#src/workers/communication-policy.js';
+import { evidenceNamePattern, repairEvidencePassages } from '#src/workers/proposal-evidence.js';
 
 const log = childLogger('worker:suggestions');
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
@@ -1151,7 +1151,9 @@ function fallbackDecisionBundle(
 ): SuggestionBundleOutput | null {
   const match = DECISION_PATTERN.exec(text.trim());
   const heading = confirmedHeading ? /^decision:\s*([^.!?]+)/i.exec(text.trim())?.[1] : undefined;
-  const decision = (match ? (match[1] ?? '') + match[2] : heading)?.replace(/\s+/g, ' ').trim();
+  const decision = (match ? (match[1] ?? '') + (match[2] ?? '') : heading)
+    ?.replace(/\s+/g, ' ')
+    .trim();
   if (
     heading &&
     /\b(?:pending|undecided|unresolved|maybe|whether|proposed|not final)\b/i.test(heading)
@@ -1223,7 +1225,12 @@ export function fallbackBundles(args: {
       );
     const decision = fallbackDecisionBundle(text, confirmedHeading);
     if (decision && !text.endsWith('?')) bundles.push(decision);
-    const primaryDirective = text.replace(/,\s*ping me if it slips\b.*$/i, '');
+    const primaryDirective = text
+      .replace(/,\s*(?:ping|tell|notify|message) me if\b.*$/i, '')
+      .replace(
+        /,\s*maybe (?:tomorrow|(?:next )?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday))[.!]?$/i,
+        '',
+      );
     if (
       /\b(?:not|never|don['’]t|won['’]t|cancelled|canceled|if|unless|maybe)\b/i.test(
         primaryDirective,
@@ -1234,14 +1241,28 @@ export function fallbackBundles(args: {
     if (!commitment) continue;
     const action = commitment.items[0]?.title;
     const later = clauses.slice(index + 1).join(' ');
-    if (
-      action &&
-      (/^(?:actually[, ]+)?(?:it|that|this task) (?:was|is) cancel(?:l)?ed\b/i.test(later) ||
-        Array.from(later.matchAll(/\b(?:i will not|i won['’]t|do not|don['’]t) ([^.!?;]+)/gi)).some(
-          (match) => match[1] && evidenceNamePattern([action]).test(match[1]),
-        ))
-    )
-      continue;
+    if (action && later) {
+      const [verb = '', ...object] = action.toLowerCase().split(/\s+/);
+      const retracted = later.matchAll(/\b(?:i will not|i won['’]t|do not|don['’]t) ([^.!?;]+)/gi);
+      const cancelled = later.matchAll(
+        /(?:^|[.!?;]\s+)(?:actually[, ]+)?([^.!?;]+?) (?:was|is|has been) cancel(?:l)?ed\b/gi,
+      );
+      if (
+        Array.from(retracted).some(
+          (match) =>
+            match[1] &&
+            evidenceNamePattern([action, verb + ' it', verb + ' that', verb + ' them']).test(
+              match[1],
+            ),
+        ) ||
+        Array.from(cancelled).some(
+          (match) =>
+            match[1] &&
+            evidenceNamePattern(['it', 'that', 'this task', object.join(' ')]).test(match[1]),
+        )
+      )
+        continue;
+    }
     bundles.push(commitment);
   }
   return bundles.slice(0, 5);
@@ -1322,47 +1343,37 @@ export function verifyEventLocalPlans(
   evidence: Parameters<typeof fallbackBundles>[0] | null,
 ) {
   const items = bundles.flatMap((bundle) => bundle.items);
+  for (const item of items) delete item.proposedPayload.plannedDate;
+  if (!evidence) return;
   const tasks = items.filter((item) => item.operation === 'create' && item.targetKind === 'task');
-  const task = tasks.length === 1 ? tasks[0] : undefined;
-  const plan =
-    task &&
-    evidence &&
-    fallbackBundles(evidence).find(
-      (bundle) =>
-        bundle.quote &&
-        evidence.text.trim().endsWith(bundle.quote) &&
-        typeof bundle.items[0]?.proposedPayload.plannedDate === 'string',
-    )?.items[0];
-  const action = (value: string) =>
+  const task = tasks[0];
+  if (tasks.length !== 1 || !task) return;
+  const plan = fallbackBundles(evidence).find(
+    (bundle) =>
+      bundle.quote &&
+      evidence.text.trim().endsWith(bundle.quote) &&
+      typeof bundle.items[0]?.proposedPayload.plannedDate === 'string',
+  )?.items[0];
+  if (!plan) return;
+
+  const normalizeAction = (value: string) =>
     value
       .toLowerCase()
       .replace(/\b(?:the|a|an)\s+/gu, '')
       .trim();
-  const label = task && action(itemCanonicalName(task));
-  const verb = plan && action(plan.title);
-  const recipient =
-    verb && label?.startsWith(verb + ' to ') ? label.slice(verb.length + 4) : undefined;
-  const matches =
-    verb &&
-    (label === verb ||
-      (recipient && evidence && evidenceNamePattern([recipient]).test(evidence.text)));
-  for (const item of items) {
-    const payload = item.proposedPayload;
-    delete payload.plannedDate;
-    if (item !== task || !matches || !plan || !evidence) continue;
-    payload.plannedDate = plan.proposedPayload.plannedDate;
+  const title = normalizeAction(itemCanonicalName(task));
+  const action = normalizeAction(plan.title);
+  if (title !== action) return;
+  const payload = task.proposedPayload;
+  payload.plannedDate = plan.proposedPayload.plannedDate;
+  if (typeof payload.dueAt === 'string' && !/\b(?:due|deadline|before|by)\b/i.test(evidence.text)) {
+    const claimed = Date.parse(payload.dueAt);
     if (
-      typeof payload.dueAt === 'string' &&
-      !/\b(?:due|deadline|before|by)\b/i.test(evidence.text)
-    ) {
-      const claimed = Date.parse(payload.dueAt);
-      if (
-        Number.isFinite(claimed) &&
-        time.localDateFromInstant(new Date(claimed).toISOString(), evidence.timezone) ===
-          payload.plannedDate
-      )
-        delete payload.dueAt;
-    }
+      Number.isFinite(claimed) &&
+      time.localDateFromInstant(new Date(claimed).toISOString(), evidence.timezone) ===
+        payload.plannedDate
+    )
+      delete payload.dueAt;
   }
 }
 
@@ -4662,7 +4673,7 @@ async function runSuggestionExtraction(
         (auditedSource
           ? `${COMMUNICATION_CONTEXT_POLICY} ${COMMUNICATION_OUTPUT_POLICY} ${COMMUNICATION_REVIEW_FOCUS}`
           : `Create a task/object when supported by a human commitment or tracked work item the team owns, and no plausible existing or pending object matches. ${REPORTED_TASK_POLICY}`) +
-        ' Represent tracked work as a task, and use follow_up for explicit reminders and follow-ups. Do not no-op just because the phrasing is messy or the existing-object list has no match. Do not create tasks from automated review findings (Cursor Bugbot, Copilot, Codex, Dependabot, CI bots) or from a single GitHub/Linear comment that is not a human commitment; those stay evidence on the parent PR/issue. If the only evidence is a finding the same PR/issue already addressed, return no create, or create with status=done. For every create task, set proposedPayload.priority to 1-4 when urgency, severity, a due date, or a blocker is stated (1=urgent/P0/blocker, 2=dated goal or high, 3=ordinary, 4=low/whenever); omit priority only when the evidence is silent. When multiple clauses describe the same tracked work, combine its requested action and timing into one descriptive task. A tracker key alone is insufficient as its title when the source describes the action. Put provider ids, repo#n, PR/issue URLs, and ticket keys in aliases even though canonicalName stays human. Do not create a company or person object from a one-off mention in a PR, commit, or review; promote mentions only when the conversation treats them as an account, client, or teammate to track. Do not create company/topic objects for broad categories such as audit firms, PE firms, healthcare providers, SaaS tools, AI in robotics, or for everyday tools/platforms such as GitHub, Google Drive, TikTok, LinkedIn, X, Slack, or Zoom; if the durable evidence is a choice about using a tool, represent it as a decision instead. Curated document chunks in the prompt are reference knowledge: they may fill counterparties, dates, constraints, and project names already implied by the conversation, and you may mention [doc:...] citations in reason text, but they must not originate a proposal by themselves and evidence ids stay raw events. For create task/object items, include proposedPayload.canonicalName matching the item title. Every create task should also propose its primary project when the evidence supports one: use proposedPayload.parentObjectId only for one project UUID listed under Existing projects or Mentioned workspace hubs, or proposedPayload.createProjectName for a clearly named new client/internal project that should be created with the task. A file title alone does not identify a project. Look for source evidence that the team is delivering or tracking that initiative. Never put a company, topic, person, or provider record in parentObjectId. When Mentioned workspace hubs lists an existing company, vendor, or deal uniquely named in this evidence, also add an object_relationship from the new task localRef to that hub. Omit project and company attachments only for standalone internal work or when two clients or projects are named and the owner is ambiguous. An explicit task assignment must set proposedPayload.assigneeUserId (or assigneeName when no member ID resolves); ownerUserId alone does not represent an assignment. A planned work day (“I will send it tomorrow”) is plannedDate. Only a deadline cue (“by tomorrow”, “due Friday”) establishes dueAt. A stated task deadline must set proposedPayload.dueAt as an ISO timestamp with timezone, even when also proposing a calendar event. For assignments, use proposedPayload.ownerUserId/assigneeUserId only when a listed team member clearly matches; otherwise use ownerName/assigneeName for a clear human name and omit the id. Keep canonicalName human-facing: do not include external tracker ids, PR numbers, issue keys, URLs, or provider prefixes unless that identifier is the only meaningful name; provider ids belong in aliases, evidence, or provider metadata. For create object/task items that will be referenced by a relationship in the same bundle, include proposedPayload.localRef as a short lowercase slug unique within the bundle. Relationship items must use targetKind="object_relationship", operation="create", proposedPayload.kind="related", and use fromEntityId/toEntityId for listed existing objects, fromRef/toRef for sibling localRefs, or fromName/toName when the existing objects are clear but the UUIDs are unavailable. Propose relationships only when the text explicitly implies a meaningful connection, not mere co-mention. A uniquely named existing client, vendor, deal, or project in the same evidence is a meaningful connection for a commitment made in that conversation. For reusable Q&A, create or update an object_note item only when the conversation contains an explicit question and an explicit answer likely to help future teammates; do not create Q&A notes for vague replies, handoffs, guesses, one-off lookups, or generic summaries. Q&A note bodies must use "Q: ..." then "A: ..." and may include a short "Source: ..." line only if it is supported by the evidence. Attach Q&A notes to the one clearly relevant existing object with proposedPayload.entityId and body. If no object fits but the Q&A is high-signal, include a create object item with proposedPayload.type="topic" and canonicalName, then include an object_note create item whose proposedPayload uses entityName and entityType="topic" plus body. For updating an existing Q&A note, return targetKind="object_note", operation="update", targetId=<note uuid>, proposedPayload.body=<replacement body> only when the same reusable question is clearly matched. Use canonical lifecycle statuses for the target type: task todo/doing/done/blocked/cancelled, follow_up todo/doing/done/cancelled, project planning/active/on_hold/shipped/cancelled. Normalize aliases into that target vocabulary: for task/follow_up, "in progress" means doing and "completed" means done; for project, "started" or "in progress" means active and "completed" or "done" means shipped; "canceled" means cancelled only when the target type supports cancelled. For clear lifecycle movement, return an update item targeting the existing artifact UUID; progress/doing/active requires explicit workflow movement such as "started" or "working on", not "looked at" or "thinking about". Completion can come from an assertive statement or from later outcome evidence that uniquely matches one listed open task/follow_up: the deliverable exists (brand book captured, naming decision accepted, project already using the name the task was supposed to create), even when nobody said "this is complete". Hedged guesses like "I think it is done" are evidence only. A file/link share that does not uniquely match a listed open task is not a create. Cancellation, blocking, and unblocking must map cleanly to the target artifact vocabulary. If multiple plausible artifacts match, return no lifecycle proposal. For calendar schedules, create calendar_event items when the evidence clearly names a meeting, call or independently requested scheduled obligation with enough date/time information. A task deadline alone belongs in dueAt, not a duplicate calendar event. Use proposedPayload.rrule for recurring schedules, including recurring calls; use recurrenceEditMode="single" for one occurrence moves, "this_and_future" for from-now-on changes, and "series" for whole-series changes. For proposed alternative meeting slots, return one create calendar_event item per slot with showAs="tentative", the same proposalGroupId, proposalStatus="tentative", and proposalRole="slot". When a previously proposed slot is confirmed, target the chosen calendar event UUID with operation="update", proposalStatus="confirmed", proposalRole="selected_slot", showAs="busy", and the final title; sibling tentative events in the same group will be cancelled by the accept path. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For board-specific workflow evidence, use board_membership or board_item_update only against boards/items listed in the prompt; weak mentions remain evidence only. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. For explicitly evidenced person email identities, propose identity_facet create items with kind=email and the exact value, using entityId for an existing person or entityRef matching the localRef on a new person create. Business email domains support a company relationship only when tied to a known company; they do not establish project membership. Use UUIDs only from the prompt when targeting existing records. Favor recall for approval-backed proposals: retain concrete, source-supported requests and proposed next steps even when ownership, project association or identity is uncertain. Use low confidence and explain the specific uncertainty; omit unsupported fields rather than discarding the whole proposal. Do not invent a target, a commitment, a completion, or a merge. Alternative possibilities and tentative requests are proposals for review, not established facts.' +
+        ' Represent tracked work as a task, and use follow_up for explicit reminders and follow-ups. Do not no-op just because the phrasing is messy or the existing-object list has no match. Do not create tasks from automated review findings (Cursor Bugbot, Copilot, Codex, Dependabot, CI bots) or from a single GitHub/Linear comment that is not a human commitment; those stay evidence on the parent PR/issue. If the only evidence is a finding the same PR/issue already addressed, return no create, or create with status=done. For every create task, set proposedPayload.priority to 1-4 when urgency, severity, a due date, or a blocker is stated (1=urgent/P0/blocker, 2=dated goal or high, 3=ordinary, 4=low/whenever); omit priority only when the evidence is silent. When multiple clauses describe the same tracked work, combine its requested action and timing into one descriptive task. A tracker key alone is insufficient as its title when the source describes the action. Put provider ids, repo#n, PR/issue URLs, and ticket keys in aliases even though canonicalName stays human. Do not create a company or person object from a one-off mention in a PR, commit, or review; promote mentions only when the conversation treats them as an account, client, or teammate to track. Do not create company/topic objects for broad categories such as audit firms, PE firms, healthcare providers, SaaS tools, AI in robotics, or for everyday tools/platforms such as GitHub, Google Drive, TikTok, LinkedIn, X, Slack, or Zoom; if the durable evidence is a choice about using a tool, represent it as a decision instead. Curated document chunks in the prompt are reference knowledge: they may fill counterparties, dates, constraints, and project names already implied by the conversation, and you may mention [doc:...] citations in reason text, but they must not originate a proposal by themselves and evidence ids stay raw events. For create task/object items, include proposedPayload.canonicalName matching the item title. Every create task should also propose its primary project when the evidence supports one: use proposedPayload.parentObjectId only for one project UUID listed under Existing projects or Mentioned workspace hubs, or proposedPayload.createProjectName for a clearly named new client/internal project that should be created with the task. A file title alone does not identify a project. Look for source evidence that the team is delivering or tracking that initiative. Never put a company, topic, person, or provider record in parentObjectId. When Mentioned workspace hubs lists an existing company, vendor, or deal uniquely named in this evidence, also add an object_relationship from the new task localRef to that hub. Omit project and company attachments only for standalone internal work or when two clients or projects are named and the owner is ambiguous. An explicit task assignment must set proposedPayload.assigneeUserId (or assigneeName when no member ID resolves); ownerUserId alone does not represent an assignment. For a first-person planned task, use the stated verb and deliverable as its canonical name. Include a recipient only when the commitment names that recipient. A planned work day (“I will send it tomorrow”) is plannedDate. Only a deadline cue (“by tomorrow”, “due Friday”) establishes dueAt. A stated task deadline must set proposedPayload.dueAt as an ISO timestamp with timezone, even when also proposing a calendar event. For assignments, use proposedPayload.ownerUserId/assigneeUserId only when a listed team member clearly matches; otherwise use ownerName/assigneeName for a clear human name and omit the id. Keep canonicalName human-facing: do not include external tracker ids, PR numbers, issue keys, URLs, or provider prefixes unless that identifier is the only meaningful name; provider ids belong in aliases, evidence, or provider metadata. For create object/task items that will be referenced by a relationship in the same bundle, include proposedPayload.localRef as a short lowercase slug unique within the bundle. Relationship items must use targetKind="object_relationship", operation="create", proposedPayload.kind="related", and use fromEntityId/toEntityId for listed existing objects, fromRef/toRef for sibling localRefs, or fromName/toName when the existing objects are clear but the UUIDs are unavailable. Propose relationships only when the text explicitly implies a meaningful connection, not mere co-mention. A uniquely named existing client, vendor, deal, or project in the same evidence is a meaningful connection for a commitment made in that conversation. For reusable Q&A, create or update an object_note item only when the conversation contains an explicit question and an explicit answer likely to help future teammates; do not create Q&A notes for vague replies, handoffs, guesses, one-off lookups, or generic summaries. Q&A note bodies must use "Q: ..." then "A: ..." and may include a short "Source: ..." line only if it is supported by the evidence. Attach Q&A notes to the one clearly relevant existing object with proposedPayload.entityId and body. If no object fits but the Q&A is high-signal, include a create object item with proposedPayload.type="topic" and canonicalName, then include an object_note create item whose proposedPayload uses entityName and entityType="topic" plus body. For updating an existing Q&A note, return targetKind="object_note", operation="update", targetId=<note uuid>, proposedPayload.body=<replacement body> only when the same reusable question is clearly matched. Use canonical lifecycle statuses for the target type: task todo/doing/done/blocked/cancelled, follow_up todo/doing/done/cancelled, project planning/active/on_hold/shipped/cancelled. Normalize aliases into that target vocabulary: for task/follow_up, "in progress" means doing and "completed" means done; for project, "started" or "in progress" means active and "completed" or "done" means shipped; "canceled" means cancelled only when the target type supports cancelled. For clear lifecycle movement, return an update item targeting the existing artifact UUID; progress/doing/active requires explicit workflow movement such as "started" or "working on", not "looked at" or "thinking about". Completion can come from an assertive statement or from later outcome evidence that uniquely matches one listed open task/follow_up: the deliverable exists (brand book captured, naming decision accepted, project already using the name the task was supposed to create), even when nobody said "this is complete". Hedged guesses like "I think it is done" are evidence only. A file/link share that does not uniquely match a listed open task is not a create. Cancellation, blocking, and unblocking must map cleanly to the target artifact vocabulary. If multiple plausible artifacts match, return no lifecycle proposal. For calendar schedules, create calendar_event items when the evidence clearly names a meeting, call or independently requested scheduled obligation with enough date/time information. A task deadline alone belongs in dueAt, not a duplicate calendar event. Use proposedPayload.rrule for recurring schedules, including recurring calls; use recurrenceEditMode="single" for one occurrence moves, "this_and_future" for from-now-on changes, and "series" for whole-series changes. For proposed alternative meeting slots, return one create calendar_event item per slot with showAs="tentative", the same proposalGroupId, proposalStatus="tentative", and proposalRole="slot". When a previously proposed slot is confirmed, target the chosen calendar event UUID with operation="update", proposalStatus="confirmed", proposalRole="selected_slot", showAs="busy", and the final title; sibling tentative events in the same group will be cancelled by the accept path. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For board-specific workflow evidence, use board_membership or board_item_update only against boards/items listed in the prompt; weak mentions remain evidence only. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. For explicitly evidenced person email identities, propose identity_facet create items with kind=email and the exact value, using entityId for an existing person or entityRef matching the localRef on a new person create. Business email domains support a company relationship only when tied to a known company; they do not establish project membership. Use UUIDs only from the prompt when targeting existing records. Favor recall for approval-backed proposals: retain concrete, source-supported requests and proposed next steps even when ownership, project association or identity is uncertain. Use low confidence and explain the specific uncertainty; omit unsupported fields rather than discarding the whole proposal. Do not invent a target, a commitment, a completion, or a merge. Alternative possibilities and tentative requests are proposals for review, not established facts.' +
         (meetingTranscript
           ? ' In a meeting transcript, the speaker labels are not verified workspace identities. Do not assign a first-person statement to the capture account or infer a workspace member from a label. A named person explicitly assigned in an utterance can be resolved against the member list.'
           : '') +
@@ -4849,7 +4860,9 @@ async function runSuggestionExtraction(
         'status',
       ].filter(
         (field) =>
-          item.proposedPayload[field] != null && groundedByDraft.get(id)?.[field] === undefined,
+          item.proposedPayload[field] !== undefined &&
+          item.proposedPayload[field] !== null &&
+          groundedByDraft.get(id)?.[field] === undefined,
       );
       return fields.length ? [{ sourceDraftId: id, fields }] : [];
     });

@@ -325,6 +325,8 @@ describe('fallbackBundles', () => {
   it.each([
     'I will send the contract tomorrow. Actually, I will not send the contract.',
     'I will send the contract tomorrow. This task was cancelled.',
+    'I will send the offer tomorrow. Actually, I will not send it.',
+    'I will send the offer tomorrow. The offer was cancelled.',
     'Training example:\nI will send the contract tomorrow.',
     'Decision: still pending. Nobody has chosen a supplier.',
     'For reference only: ENG-42. It was closed last week. No action is requested.',
@@ -406,6 +408,12 @@ describe('fallbackBundles', () => {
     verifyEventLocalPlans([retained], source);
     expect(retained.items[0]?.proposedPayload).toHaveProperty('plannedDate', '2026-05-28');
     expect(retained.items[0]?.proposedPayload).not.toHaveProperty('dueAt');
+    const denied = draft('Send the brief to Evan');
+    verifyEventLocalPlans([denied], {
+      ...source,
+      text: 'Do not send the brief to Evan. I will send the brief tomorrow.',
+    });
+    expect(denied.items[0]?.proposedPayload).not.toHaveProperty('plannedDate');
     const unrelated = draft('Send customer invoice');
     verifyEventLocalPlans([unrelated], source);
     expect(unrelated.items[0]?.proposedPayload).not.toHaveProperty('plannedDate');
@@ -2519,16 +2527,12 @@ describe('processSuggestionJobForTests', () => {
     );
 
     // A later scoped cleanup sees the pending merge from the manual scan.
-    const reviewRelationship = vi
-      .fn()
-      .mockResolvedValue({
-        model: MODEL_ID,
-        object: {
-          supported: [
-            { index: 0, quote: 'DFK and DFK Finland Oy are both involved in the pilot.' },
-          ],
-        },
-      });
+    const reviewRelationship = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        supported: [{ index: 0, quote: 'DFK and DFK Finland Oy are both involved in the pilot.' }],
+      },
+    });
     await processSuggestionJobForTests(
       { db: db as never },
       {
@@ -2540,7 +2544,9 @@ describe('processSuggestionJobForTests', () => {
       {
         getEnv: () =>
           ({ IDENTITY_SEMANTIC_ENABLED: true, OPENROUTER_API_KEY: 'test-key' }) as never,
-        chatStructured: vi.fn().mockResolvedValue({ model: MODEL_ID, object: { people: [] } }),
+        chatStructured: vi
+          .fn()
+          .mockResolvedValue({ model: MODEL_ID, object: { people: [], bundles: [] } }),
         reviewProposalEvidence: reviewRelationship,
       },
     );

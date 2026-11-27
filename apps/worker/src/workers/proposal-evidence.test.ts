@@ -15,6 +15,12 @@ test('matches typographic variants and retains exact source offsets and whole na
   }
 });
 
+test('locates a name and organization in unspaced Japanese prose', () => {
+  const source = { rawEventId: 'jp', text: '青空物流の担当者は山田太郎です。' };
+  expect(repairEvidencePassages([source], ['青空物流'])).toEqual([source]);
+  expect(evidenceNamePattern(['山田太郎']).exec(source.text)?.[0]).toBe('山田太郎');
+});
+
 test('retains exact passages across newer sources and a long document with several object mentions', () => {
   const appointment = 'Casey Lane coordinates Juniper.';
   const text =
