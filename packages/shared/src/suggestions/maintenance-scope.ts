@@ -406,7 +406,7 @@ export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
           ),
         );
     },
-    async identityEvidence(objectIds: string[]) {
+    async identityEvidence(objectIds: string[], includeFactStatements = false) {
       await scope.requireMembership();
       if (!objectIds.length) return [];
       const evidence = await db
@@ -429,9 +429,51 @@ export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
         )
         .orderBy(desc(rawEvents.occurredAt))
         .limit(80);
+      // A linked fact can locate a passage in a long source. Only the original
+      // source text is sent as evidence to the missing-person reviewer.
+      const longSourceIds = includeFactStatements
+        ? evidence.filter((row) => (row.text?.length ?? 0) > 600).map((row) => row.rawEventId)
+        : [];
+      const locators = new Map<string, string[]>();
+      if (longSourceIds.length) {
+        const rows = await db
+          .select({
+            rawEventId: facts.rawEventId,
+            statement: sql<string>`left(${facts.statement}, 1200)`,
+          })
+          .from(facts)
+          .innerJoin(factEntities, eq(factEntities.factId, facts.id))
+          .innerJoin(rawEvents, eq(rawEvents.id, facts.rawEventId))
+          .where(
+            and(
+              eq(facts.teamId, scope.teamId),
+              eq(rawEvents.teamId, scope.teamId),
+              eq(rawEvents.visibility, 'team'),
+              sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+              inArray(factEntities.entityId, objectIds),
+              inArray(facts.rawEventId, longSourceIds),
+            ),
+          )
+          .orderBy(desc(facts.extractedAt), desc(facts.id))
+          .limit(400);
+        for (const row of rows) {
+          const statements = locators.get(row.rawEventId) ?? [];
+          statements.push(row.statement);
+          locators.set(row.rawEventId, statements);
+        }
+      }
       return evidence.flatMap((row) =>
         row.text?.trim()
-          ? [{ objectId: row.objectId, rawEventId: row.rawEventId, text: row.text }]
+          ? [
+              {
+                objectId: row.objectId,
+                rawEventId: row.rawEventId,
+                text: row.text,
+                ...(includeFactStatements
+                  ? { factStatements: locators.get(row.rawEventId) ?? [] }
+                  : {}),
+              },
+            ]
           : [],
       );
     },
