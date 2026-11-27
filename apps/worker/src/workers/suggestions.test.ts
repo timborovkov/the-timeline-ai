@@ -2844,6 +2844,7 @@ describe('processSuggestionJobForTests', () => {
       role: 'subject',
     });
 
+    const chat = vi.fn();
     await processSuggestionJobForTests(
       { db: db as never },
       {
@@ -2852,7 +2853,9 @@ describe('processSuggestionJobForTests', () => {
         objectId: company.id,
         triggeredBy: 'memory_repair',
       },
+      { getEnv: () => ({ IDENTITY_SEMANTIC_ENABLED: true }) as never, chatStructured: chat },
     );
+    expect(chat).not.toHaveBeenCalled();
 
     await expect(
       withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
@@ -3021,13 +3024,16 @@ describe('processSuggestionJobForTests', () => {
       .values({ teamId: TEAM_ID, type: 'company', canonicalName: 'DFK' })
       .returning({ id: entities.id });
     if (!company) throw new Error('expected company fixture');
+    const quote = 'Jonne Granqvist from DFK discussed the pilot scope.';
+    const statement =
+      'The DIY Builders Outreach List and Outreach Tracker are files shared with DFK.';
     const [raw] = await db
       .insert(rawEvents)
       .values({
         teamId: TEAM_ID,
         authorUserId: OWNER_ID,
-        source: 'web',
-        contentText: 'Jonne Granqvist from DFK discussed the pilot scope.',
+        source: 'integration',
+        contentText: statement + ' ' + quote,
         occurredAt: REFERENCE_DATE,
         visibility: 'team',
       })
@@ -3038,7 +3044,7 @@ describe('processSuggestionJobForTests', () => {
       .values({
         teamId: TEAM_ID,
         rawEventId: raw.id,
-        statement: 'Jonne Granqvist from DFK discussed the pilot scope.',
+        statement: statement + ' ' + quote,
         confidence: 0.9,
         modelVersion: 'test',
       })
@@ -3050,6 +3056,20 @@ describe('processSuggestionJobForTests', () => {
       role: 'subject',
     });
 
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        people: [
+          { name: 'Jonne Granqvist', rawEventId: raw.id, quote },
+          { name: 'Outreach Tracker', rawEventId: raw.id, quote: 'Outreach Tracker works at DFK.' },
+          { name: 'Builders Outreach List', rawEventId: raw.id, quote: 'Builders Outreach List' },
+        ],
+      },
+    });
+    const io = {
+      getEnv: () => ({ IDENTITY_SEMANTIC_ENABLED: true, OPENROUTER_API_KEY: 'test-key' }) as never,
+      chatStructured: chat,
+    };
     await processSuggestionJobForTests(
       { db: db as never },
       {
@@ -3058,14 +3078,16 @@ describe('processSuggestionJobForTests', () => {
         objectId: company.id,
         triggeredBy: 'memory_repair',
       },
+      io,
     );
+    expect(chat).toHaveBeenCalledTimes(1);
 
     const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
     let bundles = await scope.suggestions.listPendingSuggestions();
     expect(bundles).toHaveLength(1);
     expect(bundles[0]).toMatchObject({
       title: 'Remember Jonne Granqvist and DFK',
-      evidence: [expect.objectContaining({ rawEventId: raw.id })],
+      evidence: [expect.objectContaining({ rawEventId: raw.id, quote })],
     });
     const personItem = bundles[0]?.items.find((item) => item.targetKind === 'object');
     const relationshipItem = bundles[0]?.items.find(
@@ -3102,6 +3124,7 @@ describe('processSuggestionJobForTests', () => {
         objectId: company.id,
         triggeredBy: 'memory_repair',
       },
+      io,
     );
 
     bundles = await scope.suggestions.listPendingSuggestions();
@@ -3117,19 +3140,20 @@ describe('processSuggestionJobForTests', () => {
     expect(relationshipItems).toEqual([{ status: 'rejected' }]);
   });
 
-  it('does not create missing person objects from bare first names', async () => {
+  it('does not propose people or relationships for file titles and bare first names', async () => {
     const [company] = await db
       .insert(entities)
       .values({ teamId: TEAM_ID, type: 'company', canonicalName: 'DFK' })
       .returning({ id: entities.id });
     if (!company) throw new Error('expected company fixture');
+    const statement = 'Jonne shared the DIY Builders Outreach List and Outreach Tracker with DFK.';
     const [raw] = await db
       .insert(rawEvents)
       .values({
         teamId: TEAM_ID,
         authorUserId: OWNER_ID,
-        source: 'web',
-        contentText: 'Jonne from DFK discussed the pilot scope.',
+        source: 'integration',
+        contentText: statement,
         occurredAt: REFERENCE_DATE,
         visibility: 'team',
       })
@@ -3140,7 +3164,7 @@ describe('processSuggestionJobForTests', () => {
       .values({
         teamId: TEAM_ID,
         rawEventId: raw.id,
-        statement: 'Jonne from DFK discussed the pilot scope.',
+        statement,
         confidence: 0.9,
         modelVersion: 'test',
       })
@@ -3152,15 +3176,32 @@ describe('processSuggestionJobForTests', () => {
       role: 'subject',
     });
 
-    await processSuggestionJobForTests(
-      { db: db as never },
-      {
-        scope: 'object_cleanup',
-        teamId: TEAM_ID,
-        objectId: company.id,
-        triggeredBy: 'memory_repair',
+    const job = {
+      scope: 'object_cleanup',
+      teamId: TEAM_ID,
+      objectId: company.id,
+      triggeredBy: 'memory_repair',
+    } as const;
+    await processSuggestionJobForTests({ db: db as never }, job, {
+      getEnv: () => ({ IDENTITY_SEMANTIC_ENABLED: false }) as never,
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        people: [
+          {
+            name: 'Jonne',
+            rawEventId: raw.id,
+            quote: statement,
+          },
+        ],
       },
-    );
+    });
+    await processSuggestionJobForTests({ db: db as never }, job, {
+      getEnv: () => ({ IDENTITY_SEMANTIC_ENABLED: true, OPENROUTER_API_KEY: 'test-key' }) as never,
+      chatStructured: chat,
+    });
+    expect(chat).toHaveBeenCalledTimes(1);
 
     await expect(
       withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
@@ -4487,6 +4528,7 @@ describe('processSuggestionJobForTests', () => {
           ],
         },
       });
+      chat.mockResolvedValueOnce({ model: MODEL_ID, object: { people: [] } });
       await processSuggestionJobForTests(
         { db: db as never },
         { scope: 'object_cleanup', teamId: TEAM_ID, objectId: task.id },

@@ -4,6 +4,8 @@ import { PGlite } from '@electric-sql/pglite';
 import {
   agentSuggestionItems,
   entities,
+  factEntities,
+  facts,
   rawEvents,
   reconciliationOutputs,
   teamMembers,
@@ -102,6 +104,55 @@ maybeDescribe('live suggestion worker evals', () => {
         plannedDate: null,
       }),
     ]);
+  }, 240_000);
+
+  it('identifies the named contact among Drive file titles during object repair', async () => {
+    const text =
+      'Acme uses the DIY Builders Outreach List and Outreach Tracker for its launch. Casey Lane is the launch coordinator for Acme.';
+    await db
+      .update(rawEvents)
+      .set({ source: 'integration', contentText: text })
+      .where(eq(rawEvents.id, RAW_EVENT_ID));
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: RAW_EVENT_ID,
+        statement: text,
+        confidence: 1,
+        modelVersion: 'fixture',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('missing repair fact');
+    await db.insert(factEntities).values({ factId: fact.id, entityId: ACME_ID, role: 'subject' });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_cleanup',
+        teamId: TEAM_ID,
+        objectId: ACME_ID,
+        triggeredBy: 'memory_repair',
+      },
+    );
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      USER_ID,
+    ).suggestions.listPendingSuggestions();
+    const people = bundles
+      .flatMap((bundle) => bundle.items)
+      .filter((item) => item.proposedPayload.type === 'person');
+    expect(people.map((item) => item.proposedPayload.canonicalName)).toEqual(['Casey Lane']);
+    expect(
+      bundles
+        .flatMap((bundle) => bundle.evidence)
+        .some(
+          (entry) =>
+            entry.rawEventId === RAW_EVENT_ID &&
+            entry.quote?.includes('Casey Lane') &&
+            text.includes(entry.quote),
+        ),
+    ).toBe(true);
   }, 240_000);
 
   // Recall gate: tentative but concrete requests must survive missing optional fields.

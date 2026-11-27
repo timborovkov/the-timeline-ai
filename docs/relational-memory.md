@@ -438,6 +438,12 @@ the last successful checkpoint. The reconciliation page exposes recent cleanup a
 document-review progress; the approval surface owns review and rejection.
 
 Each active object receives scoped duplicate, relationship and low-signal review.
+For a missing Person, semantic identity review examines up to three team-visible sources
+linked to the object by extracted facts. The model must identify an individual by
+full name and cite a passage that connects them to the selected object or an alias.
+The worker checks the passage against the original source and includes it in the
+approval bundle for the Person and relationship. Ambiguous file titles, bare first
+names and unavailable semantic review produce no missing-Person proposal.
 Person email facets support company affiliation; project/company semantic matches
 require source support. Equal project names alone never authorize a cleanup merge;
 source-backed semantic equivalence or a stable provider identity is required. Historical factual repair considers up to three recent
