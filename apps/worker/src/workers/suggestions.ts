@@ -1223,17 +1223,14 @@ export function fallbackBundles(args: {
     value.replace(/\uE000(\d+)\uE001/g, (_, index: string) => titles[Number(index)] ?? '');
   const clauses = unquoted.trim().split(/(?<=[.!?;])\s+(?!(?:and|then|also)\s)|\n+/i);
   const bundles: SuggestionBundleOutput[] = [];
-  // A later explicit retraction makes a rule-based attribution unsafe.
-  if (
-    /\b(?:actually[, ]+)?(?:scratch that|cancel that|never mind|i (?:won['’]t|will not) (?:after all|do (?:it|that)))\b/i.test(
-      unquoted,
-    )
-  )
-    return [];
+  const retraction =
+    /(?:^|[,;–—]\s*)(?:actually[, ]+)?(?:scratch that|cancel that|never mind|i (?:won['’]t|will not) (?:after all|do (?:it|that)(?: after all)?))[.!;]?\s*$/i;
   for (const [index, clause] of clauses.entries()) {
     const text = clause.trim();
     if (
       !text ||
+      retraction.test(text) ||
+      retraction.exec(clauses[index + 1]?.trim() ?? '')?.index === 0 ||
       /\uFFFC|^>|\b(?:example|template)\s*:|\b(?:hypothetical|for reference only|no action)\b/i.test(
         text,
       ) ||
@@ -1265,30 +1262,33 @@ export function fallbackBundles(args: {
     }
     if (!commitment) continue;
     const action = commitment.items[0]?.title;
-    const later = clauses.slice(index + 1).join(' ');
-    if (action && later) {
+    if (action) {
       const [verb = '', ...object] = action.toLowerCase().split(/\s+/);
-      const retracted = later.matchAll(/\b(?:i will not|i won['’]t|do not|don['’]t) ([^.!?;]+)/gi);
-      const cancelled = later.matchAll(
-        /(?:^|[.!?;]\s+)(?:actually[, ]+)?([^.!?;]+?) (?:was|is|has been) cancel(?:l)?ed\b/gi,
-      );
-      if (
-        Array.from(retracted).some(
-          (match) =>
-            match[1] &&
-            evidenceNamePattern([action, verb + ' it', verb + ' that', verb + ' them']).test(
-              restoreTitles(match[1]),
-            ),
-        ) ||
-        Array.from(cancelled).some(
-          (match) =>
-            match[1] &&
-            evidenceNamePattern(['it', 'that', 'this task', object.join(' ')]).test(
-              restoreTitles(match[1]),
-            ),
-        )
-      )
-        continue;
+      const cancelled = clauses.slice(index + 1).some((later, distance) => {
+        const negation =
+          /^(?:actually[, ]+)?(?:i will not|i won['’]t|do not|don['’]t) ([^.!?;]+)/i.exec(
+            later.trim(),
+          )?.[1];
+        if (negation) {
+          const targets =
+            distance === 0 ? [action, verb + ' it', verb + ' that', verb + ' them'] : [action];
+          return evidenceNamePattern(targets).test(restoreTitles(negation));
+        }
+        const subject = /^(?:actually[, ]+)?(.+?) (?:was|is|has been) cancel(?:l)?ed\b/i.exec(
+          later.trim(),
+        )?.[1];
+        const target =
+          /^(?:actually[, ]+)?(?:cancel|scratch) (?:the |that |this )?([^.!?;]+)/i.exec(
+            later.trim(),
+          )?.[1];
+        const objectName = object.join(' ').replace(/^(?:the|that|this|a|an)\s+/, '');
+        if (subject && distance === 0 && /^(?:it|that|this task)$/i.test(subject)) return true;
+        const cancelledName = (subject ?? target)?.replace(/^(?:the|that|this|a|an)\s+/i, '');
+        return Boolean(
+          cancelledName && objectName && restoreTitles(cancelledName).toLowerCase() === objectName,
+        );
+      });
+      if (cancelled) continue;
     }
     bundles.push(commitment);
   }
@@ -2790,7 +2790,7 @@ async function qualifyPersonAndProjectCreates(
   }
   const claims: EvidenceClaim[] = [];
   const claimsByItem = new Map<SuggestionItemOutput, number[]>();
-  for (const { items } of bundles)
+  for (const { items, quote } of bundles)
     for (const item of items) {
       const type = itemCreateType(item);
       const objectCreate =
@@ -2806,9 +2806,11 @@ async function qualifyPersonAndProjectCreates(
       const indexes: number[] = [];
       const claimedType = objectCreate && type === 'person' ? 'person' : 'project';
       for (const source of sources) {
-        let sourceNames = [name];
-        let match = evidenceNamePattern(sourceNames).exec(source.contentText);
-        if (!match) {
+        const sourceNames = [name];
+        if (
+          !evidenceNamePattern(sourceNames).test(source.contentText) ||
+          source.contentText.length > 6000
+        ) {
           const record = await uniqueObject(claimedType, name);
           const subject = {
             id: 'candidate',
@@ -2817,37 +2819,45 @@ async function qualifyPersonAndProjectCreates(
             metadata: objectCreate ? item.proposedPayload.metadata : undefined,
           };
           if (
-            !record ||
-            !rawCleanupNames(record).some(
+            record &&
+            rawCleanupNames(record).some(
               (registered) => registered.toLowerCase() === name.toLowerCase(),
-            ) ||
-            !suggestions.identityMatchReason(subject, record)
-          )
-            continue;
-          sourceNames = [];
-          for (const alias of new Set(rawCleanupNames(record))) {
-            if (
-              evidenceNamePattern([alias]).test(source.contentText) &&
-              (await uniqueObject(claimedType, alias))?.id === record.id
-            )
-              sourceNames.push(alias);
+            ) &&
+            suggestions.identityMatchReason(subject, record)
+          ) {
+            for (const alias of new Set(rawCleanupNames(record))) {
+              if (
+                alias !== name &&
+                evidenceNamePattern([alias]).test(source.contentText) &&
+                (await uniqueObject(claimedType, alias))?.id === record.id
+              )
+                sourceNames.push(alias);
+            }
           }
-          match = evidenceNamePattern(sourceNames).exec(source.contentText);
         }
-        if (!match) continue;
-        const position = match.index;
-        const offset = Math.max(0, position - 2000);
-        indexes.push(claims.length);
-        claims.push({
-          claim: JSON.stringify({
-            type: claimedType,
-            name,
-            ...(sourceNames[0] !== name ? { registeredNames: sourceNames } : {}),
-          }),
-          names: sourceNames,
-          rawEventId: source.rawEventId,
-          text: source.contentText.slice(offset, offset + 6000),
-        });
+        const locators = [
+          ...(quote ? [quote] : []),
+          ...(item.grounding ?? [])
+            .filter((entry) => entry.rawEventId === source.rawEventId)
+            .map((entry) => entry.quote),
+        ].filter((locator) => evidenceNamePattern(sourceNames).test(locator));
+        const passages = repairEvidencePassages(
+          [{ rawEventId: source.rawEventId, text: source.contentText, factStatements: locators }],
+          sourceNames,
+        );
+        for (const { rawEventId, text } of passages) {
+          indexes.push(claims.length);
+          claims.push({
+            claim: JSON.stringify({
+              type: claimedType,
+              name,
+              ...(sourceNames.length > 1 ? { registeredNames: sourceNames.slice(1) } : {}),
+            }),
+            names: sourceNames,
+            rawEventId,
+            text,
+          });
+        }
       }
       claimsByItem.set(item, indexes);
     }

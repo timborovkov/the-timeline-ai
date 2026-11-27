@@ -414,6 +414,10 @@ describe('fallbackBundles', () => {
     'I will send the contract tomorrow. This task was cancelled.',
     'I will send the offer tomorrow. Actually, I will not send it.',
     'I will send the offer tomorrow. The offer was cancelled.',
+    'I will send the report tomorrow. Actually, scratch that.',
+    'I will send the report tomorrow, actually, scratch that.',
+    'I will send the report tomorrow. I will not do it after all.',
+    'I will schedule the meeting tomorrow. Cancel that meeting.',
     'I will send the report, maybe tomorrow.',
     'I will send the report, maybe next Friday.',
     'I will send the report, notify me if it slips tomorrow.',
@@ -458,6 +462,20 @@ describe('fallbackBundles', () => {
     [
       'We decided to use "Cedar, Inc" as the shipping provider.',
       ['Use "Cedar, Inc" as the shipping provider'],
+    ],
+    [
+      'I will send the estimate tomorrow. I will send the invoice tomorrow, scratch that.',
+      ['Send the estimate'],
+    ],
+    ['Cancel that meeting. I will send the estimate tomorrow.', ['Send the estimate']],
+    ['I will send the estimate tomorrow. Cancel that meeting.', ['Send the estimate']],
+    [
+      'I will send the report tomorrow. Scratch that. I will send the estimate tomorrow.',
+      ['Send the estimate'],
+    ],
+    [
+      'I will send the estimate tomorrow. I will send the invoice tomorrow. I will not send it.',
+      ['Send the estimate'],
     ],
     [
       'Decision: use Larch as the shipping provider. The vote is final.',
@@ -3264,6 +3282,65 @@ describe('processSuggestionJobForTests', () => {
         expect(Object.values(edge?.proposedPayload ?? {})).toEqual(
           expect.arrayContaining([projectId, personId]),
         );
+    },
+  );
+
+  it.each([false, true])(
+    'qualifies a project from a later source passage after inventory mentions (draft cites passage: %s)',
+    async (cited) => {
+      const rawEventId = crypto.randomUUID();
+      const quote = 'Casey Lane is leading the Juniper rollout project.';
+      const inventory = 'Archive inventory: Juniper rollout.xlsx.';
+      const text =
+        inventory +
+        ' Filed.'.repeat(1600) +
+        quote +
+        (cited ? ' Filed.'.repeat(1600) + inventory : '');
+      await seedRawEvent(db as never, {
+        id: rawEventId,
+        text,
+        source: 'ingest_webhook',
+        sourceMetadata: { extracted_at: REFERENCE_DATE.toISOString() },
+      });
+      const name = 'Juniper rollout';
+      const chat = vi.fn().mockResolvedValue({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: name,
+              confidence: 'medium',
+              ...(cited ? { quote } : {}),
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'object',
+                  title: name,
+                  proposedPayload: { type: 'project', canonicalName: name },
+                },
+              ],
+            },
+          ],
+        },
+      });
+      const review: typeof llm.chatStructured = (input) => {
+        const passages = JSON.parse(input.prompt) as { index: number; source: string }[];
+        return Promise.resolve({
+          model: MODEL_ID,
+          object: input.schema.parse({
+            supported: passages
+              .filter(({ source }) => source.includes(quote))
+              .map(({ index }) => ({ index, quote })),
+          }),
+        });
+      };
+      await processSuggestionJobForTests(
+        { db: db as never },
+        { teamId: TEAM_ID, rawEventId },
+        { getEnv: env, chatStructured: chat, reviewProposalEvidence: review, modelId: MODEL_ID },
+      );
+      const items = await db.select().from(agentSuggestionItems);
+      expect(items.map((item) => item.title)).toEqual([name]);
     },
   );
 
