@@ -610,7 +610,7 @@ export function groundEventLocalDayOnlyDeadline(args: {
   const instant = Date.parse(args.claimed);
   if (
     !Number.isFinite(instant) ||
-    /["“”`>]|\b(?:example|template|hypothetical|if|unless|not|never|instead|except|time|noon|midnight|morning|afternoon|evening|lunch|EOD|COB|UTC|GMT|opening|closing|o.clock)\b|\b\d{1,2}(?::\d{2}|\s*[ap]\.?m\b)|\bat\s+(?:\d|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/i.test(
+    /["“”`>\d]|\b(?:example|template|hypothetical|if|unless|not|never|instead|except|time|noon|midnight|morning|afternoon|evening|lunch|EOD|COB|UTC|GMT|opening|closing|o.clock|cut[ -]?off)\b/i.test(
       args.text,
     )
   )
@@ -621,7 +621,12 @@ export function groundEventLocalDayOnlyDeadline(args: {
       .split(/(?<=[.!?])\s+|\n+/u)
       .at(-1) ?? '';
   const prior = args.text.trim().slice(0, -sentence.length);
-  if (/\b(?:due|deadline|by|at|before|after|hour|zone)\b/i.test(prior)) return;
+  if (
+    /\b(?:due|deadline|by|at|before|after|hour|zone|today|tomorrow|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i.test(
+      prior,
+    )
+  )
+    return;
   const match =
     /^(?:(.+?) will |please )?([^.,;!?]+?) by (today|tomorrow|(?:next )?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday))[.!]?$/i.exec(
       sentence,

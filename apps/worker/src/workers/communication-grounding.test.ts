@@ -4145,6 +4145,8 @@ test('normalizes an ordinary task deadline only for the same identified action a
   for (const change of [
     { text: text.replace('by Friday', 'by Friday at 17:00') },
     { text: 'The deadline is noon. ' + text },
+    { text: "Friday's cutoff is 1700 local. " + text },
+    { text: "Friday's cutoff is 17h00. " + text },
     { text: text.replace('send the launch checklist', 'send the estimate') },
     { text: text.replace('Casey Lane', 'Jamie') },
     { text, claimed: '2026-07-10T17:00:00+03:00' },
