@@ -43,32 +43,13 @@
   font-size: 1rem;
   line-height: 1.5;
 }
-.preview[data-preview-kind='work-record'] .rows {
-  padding-left: 1.25rem;
-  border-left: 1px solid var(--border-strong);
-}
-.preview[data-preview-kind='work-record'] .rows > div {
-  border: 0;
-  position: relative;
-  padding-top: 0.5rem;
-}
-.preview[data-preview-kind='work-record'] .rows > div::before {
-  content: '';
-  position: absolute;
-  left: -1.5rem;
-  top: 0.8rem;
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: var(--signal);
-}
 .preview[data-preview-kind='team-daily-log'] .rows > div {
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr);
   gap: 1rem;
   align-items: baseline;
 }
-.preview[data-preview-kind='crm'] .rows > div,
+.preview[data-preview-kind='customer-context'] .rows > div,
 .preview[data-preview-kind='task-board'] .rows > div {
   display: grid;
   grid-template-columns: minmax(0, 0.65fr) minmax(0, 1fr);

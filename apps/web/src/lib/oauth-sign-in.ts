@@ -202,7 +202,10 @@ export function authenticationMethod(
 
 export function oauthSignInErrorMessage(error: string | undefined): string | null {
   if (!error) return null;
-  if (error === 'OAuthAccountNotLinked' || error === 'AccessDenied') {
+  if (error === 'OAuthAccountNotLinked') {
+    return 'This sign-in method could not be linked. Sign in with your original sign-in method.';
+  }
+  if (error === 'AccessDenied') {
     return 'This sign-in method could not be linked. Use your existing email or GitHub login, verify that email, then try again. Unverified emails are never linked automatically.';
   }
   if (

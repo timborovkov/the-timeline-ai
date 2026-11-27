@@ -29,18 +29,18 @@ export function PaygValueNudge({ storageKey }: { storageKey: string }) {
   if (dismissed || storedDismissal) return null;
   return (
     <aside
-      aria-label="Pay as you go suggestion"
+      aria-label="Team plan suggestion"
       className="flex flex-wrap items-center gap-3 border-t border-border pt-5"
     >
       <div className="min-w-0 w-full">
         <p className="text-sm font-medium">Keep going when your Free allowance runs out</p>
         <p className="mt-2 text-xs leading-5 text-fg-muted">
-          Pay as you go keeps your Free allowances, with no platform fee. Extra usage is metered
-          under a €25 monthly default cap; extra members and tax may add charges.
+          Team starts at $10 per full member each month. Every paid seat adds to your shared
+          Included usage.
         </p>
       </div>
       <Button asChild variant="outline" size="sm">
-        <Link href="/app/team?section=billing&plan=payg#change-plan">Explore Pay as you go</Link>
+        <Link href="/app/team?section=billing&plan=team#change-plan">Explore Team</Link>
       </Button>
       <Button
         type="button"

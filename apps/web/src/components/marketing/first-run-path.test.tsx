@@ -22,7 +22,7 @@ describe('FirstRunPath', () => {
     expect(html).toContain('explicit notes and supported media can still be captured');
     expect(html).not.toContain('it does not capture');
     expect(html).toContain(
-      'Scan a website, upload a document, forward an email, or skip. Connect Slack or Telegram later at go-live.',
+      'Start with a document, website or forwarded email. You can also connect a relevant Slack channel or Telegram group from Sources.',
     );
     expect(html).not.toContain('or connect Slack or Telegram.');
     expect(html).not.toMatch(/all integrations|minutes to set up|install every/iu);

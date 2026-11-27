@@ -634,6 +634,19 @@ export function currentPeriodSpendCapExceeded(input: {
   return alreadyCents + addedCents > input.spendCapCents;
 }
 
+function billedDurationEndMs(
+  startMs: number,
+  units: number,
+  unitMs: number,
+  endedAt?: Date,
+): number {
+  const roundedEndMs = startMs + units * unitMs;
+  const actualEndMs = endedAt?.getTime();
+  return actualEndMs !== undefined && actualEndMs > startMs
+    ? Math.min(actualEndMs, roundedEndMs)
+    : roundedEndMs;
+}
+
 /**
  * Split duration-based native units across UTC month boundaries so a Recall
  * meeting that crosses midnight on the 1st is not charged wholly to the new
@@ -641,6 +654,7 @@ export function currentPeriodSpendCapExceeded(input: {
  */
 export function splitDurationNativeUnitsByUtcMonth(input: {
   startedAt: Date;
+  endedAt?: Date;
   nativeUnits: number;
   unitMs: number;
 }): { periodYm: string; nativeUnits: number }[] {
@@ -652,7 +666,7 @@ export function splitDurationNativeUnitsByUtcMonth(input: {
     return [{ periodYm: periodYmUtc(input.startedAt), nativeUnits: total }];
   }
   const startMs = input.startedAt.getTime();
-  const endMs = startMs + total * input.unitMs;
+  const endMs = billedDurationEndMs(startMs, total, input.unitMs, input.endedAt);
   const segments: { periodYm: string; nativeUnits: number }[] = [];
   let cursorMs = startMs;
   let remaining = total;
@@ -661,9 +675,9 @@ export function splitDurationNativeUnitsByUtcMonth(input: {
     const ym = periodYmUtc(cursor);
     const nextMonthMs = Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1);
     const sliceEndMs = Math.min(endMs, nextMonthMs);
-    const rawUnits = Math.max(0, (sliceEndMs - cursorMs) / input.unitMs);
+    const wholeUnitsThroughBoundary = Math.floor((sliceEndMs - startMs) / input.unitMs);
     const isLast = sliceEndMs >= endMs;
-    const nativeUnits = isLast ? remaining : Math.min(remaining, Math.floor(rawUnits));
+    const nativeUnits = isLast ? remaining : wholeUnitsThroughBoundary - (total - remaining);
     if (nativeUnits > 0 || segments.length === 0) {
       const last = segments.at(-1);
       if (last?.periodYm === ym) last.nativeUnits += nativeUnits;
@@ -700,6 +714,7 @@ export interface DiscountWindowDurationSlice {
  */
 export function splitDurationNativeUnitsByDiscountWindow(input: {
   startedAt: Date;
+  endedAt?: Date;
   nativeUnits: number;
   unitMs: number;
   periodStartedAt: Date | null;
@@ -728,7 +743,7 @@ export function splitDurationNativeUnitsByDiscountWindow(input: {
   if (total === 0 || input.unitMs <= 0) return [oneSlice(input.startedAt, total)];
 
   const startMs = input.startedAt.getTime();
-  const endMs = startMs + total * input.unitMs;
+  const endMs = billedDurationEndMs(startMs, total, input.unitMs, input.endedAt);
   const slices: DiscountWindowDurationSlice[] = [];
   let cursorMs = startMs;
   let remaining = total;
@@ -739,8 +754,10 @@ export function splitDurationNativeUnitsByDiscountWindow(input: {
     const boundaryMs = Math.min(endMs, nextMonthMs, window.endsAt.getTime());
     const sliceEndMs = boundaryMs > cursorMs ? boundaryMs : endMs;
     const isLast = sliceEndMs >= endMs;
-    const rawUnits = Math.max(0, (sliceEndMs - cursorMs) / input.unitMs);
-    const nativeUnits = isLast ? remaining : Math.min(remaining, Math.floor(rawUnits));
+    // Round cumulative elapsed time so adding a renewal boundary cannot move
+    // whole minutes out of the UTC month that already earned them.
+    const wholeUnitsThroughBoundary = Math.floor((sliceEndMs - startMs) / input.unitMs);
+    const nativeUnits = isLast ? remaining : wholeUnitsThroughBoundary - (total - remaining);
     if (nativeUnits > 0) {
       slices.push({
         periodYm: periodYmUtc(cursor),
@@ -773,12 +790,12 @@ export interface RecallDiscountWindowShare {
 }
 
 /**
- * Recall customer charge for each subscription window a meeting touches.
- * Month segments stay the billing periods; their charge is shared across the
- * windows inside that month in time order.
+ * Price Recall slices in order, keeping UTC spend-cap months separate even
+ * when they share a subscription allowance window.
  */
 export function recallDiscountWindowShares(input: {
   startedAt: Date;
+  endedAt?: Date;
   nativeUnits: number;
   periodStartedAt: Date | null;
   periodEndsAt: Date | null;
@@ -786,6 +803,7 @@ export function recallDiscountWindowShares(input: {
 }): RecallDiscountWindowShare[] {
   const slices = splitDurationNativeUnitsByDiscountWindow({
     startedAt: input.startedAt,
+    ...(input.endedAt ? { endedAt: input.endedAt } : {}),
     nativeUnits: input.nativeUnits,
     unitMs: 60_000,
     periodStartedAt: input.periodStartedAt,
@@ -818,34 +836,19 @@ export function recallDiscountWindowShares(input: {
   for (const parts of byPeriod.values()) {
     for (const part of parts) priced.push({ ...part, chargeCents: 0 });
   }
-  const groups = new Map<string, RecallDiscountWindowShare>();
-  for (const slice of priced) {
-    const key = `${slice.windowStartedAt.toISOString()}|${slice.windowEndsAt.toISOString()}`;
-    const existing = groups.get(key);
-    if (existing) {
-      existing.nativeUnits += slice.nativeUnits;
-      existing.chargeCents += slice.chargeCents;
-    } else {
-      groups.set(key, {
-        usageAt: slice.usageAt,
-        windowStartedAt: slice.windowStartedAt,
-        windowEndsAt: slice.windowEndsAt,
-        nativeUnits: slice.nativeUnits,
-        chargeCents: slice.chargeCents,
-      });
-    }
-  }
-  return [...groups.values()];
+  return priced.map(({ periodYm: _periodYm, ...share }) => share);
 }
 
 export function settlementSegmentsForMeter(input: {
   meterId: BillingMeterId;
   nativeUnits: number;
   startedAt: Date;
+  endedAt?: Date;
 }): { periodYm: string; nativeUnits: number }[] {
   if (input.meterId === 'recall_minutes') {
     return splitDurationNativeUnitsByUtcMonth({
       startedAt: input.startedAt,
+      ...(input.endedAt ? { endedAt: input.endedAt } : {}),
       nativeUnits: input.nativeUnits,
       unitMs: 60_000,
     });

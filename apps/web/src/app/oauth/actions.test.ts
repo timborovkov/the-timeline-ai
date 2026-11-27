@@ -1,3 +1,4 @@
+import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
@@ -142,8 +143,8 @@ beforeEach(() => {
   vi.stubEnv('AUTH_URL', 'https://timeline.example');
   fakes.auth.mockResolvedValue({ user: { id: USER_ID } });
   fakes.getUserLegalAcceptance.mockResolvedValue({
-    legalTermsVersion: '2026-06-02',
-    legalPrivacyVersion: '2026-08-26',
+    legalTermsVersion: TERMS_VERSION,
+    legalPrivacyVersion: PRIVACY_VERSION,
     legalAcceptedAt: new Date(),
   });
   fakes.hasCurrentLegalAcceptance.mockReturnValue(true);

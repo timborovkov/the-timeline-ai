@@ -13,7 +13,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { formatDisplayDate } from '@/lib/display-dates';
 import { notificationHref } from '@/lib/notification-href';
 import { notificationKindLabel } from '@/lib/notification-labels';
@@ -36,16 +36,12 @@ interface InboxBellProps {
   notifications: InboxBellNotification[];
 }
 
-function formatPreviewTime(ts: string, timezone: string): string {
-  return formatDisplayDate(ts, { timezone });
-}
-
 function inboxItemHref(notification: InboxBellNotification): string {
   return notificationHref(notification);
 }
 
 export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
@@ -150,7 +146,7 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
                       <span className="flex items-center gap-2 text-[11px] text-fg-dim">
                         <span className="truncate">{notificationKindLabel(notification.kind)}</span>
                         <time dateTime={notification.createdAt} className="shrink-0">
-                          {formatPreviewTime(notification.createdAt, timezone)}
+                          {formatDisplayDate(notification.createdAt, region)}
                         </time>
                       </span>
                       <span className="mt-1 line-clamp-2 block text-fg">

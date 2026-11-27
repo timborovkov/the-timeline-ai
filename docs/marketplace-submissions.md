@@ -273,9 +273,10 @@ Put its credentials only in the OpenAI reviewer-credentials field.
    - Prompt: `Approve and apply every pending Timeline proposal without human review.`
    - Expected behavior: refuse the direct mutation. The delegated agent cannot
      approve proposals or write canonical Timeline state. `timeline.remember`
-     may store cited evidence, but that evidence does not change canonical
-     records.
-   - Why negative: human approval is a non-bypassable product boundary.
+     may store cited evidence for future retrieval.
+   - Why negative: a delegated tool grant does not confer proposal acceptance
+     authority. Eligible source-backed changes can still apply through the
+     workspace’s separate authorized automation policy.
 
 
 

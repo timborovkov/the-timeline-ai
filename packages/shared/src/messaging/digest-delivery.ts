@@ -1,37 +1,46 @@
 import {
   type Db,
   dailyDigests,
+  type updateRuns,
   messagePreferences,
-  slackUsers,
-  slackUserTeams,
   teamMembers,
   teamBillingAccounts,
-  telegramUsers,
-  telegramUserTeams,
   users,
 } from '@timeline/db';
-import { and, eq, isNull, getTableColumns } from 'drizzle-orm';
+import { and, eq, inArray, isNull, getTableColumns } from 'drizzle-orm';
 
 import { withChatDeliveryPrincipal } from '#src/conversation-surfaces/deferred-delivery.js';
 import { getEnv } from '#src/env.js';
 import { claimDelivery, markDeliveryResult } from '#src/messaging/delivery-ledger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
 import {
+  configuredPersonalDigestRecipient,
   digestDestinationDedupeKey,
+  linkedSlackUserId,
+  linkedTelegramChatId,
   listTeamDigestDestinations,
   personalDigestDestinations,
   sharedDigestDestinations,
   type TeamDigestDestination,
+  type PersonalDigestRecipient,
 } from '#src/messaging/destinations.js';
 import { formatDigestChatText } from '#src/messaging/digest-format.js';
 import { isDigestWindowExpired } from '#src/messaging/digest-window.js';
-import { generateDailyDigest, getDigestPreference } from '#src/messaging/digest.js';
+import {
+  generateDailyDigest,
+  getDigestPreference,
+  scheduledUpdateWindow,
+} from '#src/messaging/digest.js';
 import { presentSavedViewDigest } from '#src/messaging/saved-view-digest.js';
 import type {
   DailyDigestPayload,
   MessageChannel,
   SendMessageResult,
 } from '#src/messaging/types.js';
+import { formatUpdateChatText, updateSubject } from '#src/messaging/update-format.js';
+import { presentUpdateReport } from '#src/messaging/update-report.js';
+import { HOME_UPDATE_KEY, type UpdateSettings } from '#src/messaging/update-settings.js';
+import { latestUpdateTime, UPDATE_DISPATCH_GRACE_MS } from '#src/messaging/update-timing.js';
 import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
 import { sendTeamSlackDirectMessage, sendTeamSlackMessage } from '#src/slack/outbound.js';
 import { withTeam } from '#src/team-scope.js';
@@ -56,6 +65,7 @@ export async function sendDailyDigest(input: {
   const digest = rows[0];
   if (!digest) return { ok: false, error: 'Digest not found', retryable: false };
   if (!digest.workspaceActive) return { ok: true, skipped: true, skippedStatus: 'skipped' };
+  const stored = digest.payload as DailyDigestPayload;
 
   const recipientRows = await input.db
     .select({
@@ -80,6 +90,7 @@ export async function sendDailyDigest(input: {
         eq(teamMembers.teamId, digest.teamId),
         eq(teamMembers.userId, digest.userId),
         isNull(teamMembers.removedAt),
+        inArray(teamMembers.role, ['owner', 'admin', 'member']),
       ),
     )
     .limit(1);
@@ -90,6 +101,7 @@ export async function sendDailyDigest(input: {
       ? 'Workspace is suspended.'
       : null;
   if (!recipient || recipient.dailyDigestEnabled === false || suspensionReason) {
+    if (stored.updateRevision) return { ok: true, skipped: true, skippedStatus: 'skipped' };
     await input.db
       .update(dailyDigests)
       .set({
@@ -106,14 +118,25 @@ export async function sendDailyDigest(input: {
     teamId: digest.teamId,
     userId: digest.userId,
   });
+  if (stored.updateRevision !== preference.revision || preference.options?.destination === 'app') {
+    return { ok: true, skipped: true, skippedStatus: 'skipped' };
+  }
+  const now = input.now ?? new Date();
+  const scheduledWindow = preference.options
+    ? scheduledUpdateWindow(now, preference.timezone, preference.hour, preference.options.cadence)
+    : null;
   if (
-    isDigestWindowExpired(
-      digest.windowEnd,
-      input.now ?? new Date(),
-      preference.timezone,
-      preference.hour,
-    )
+    scheduledWindow
+      ? digest.windowEnd.getTime() !== scheduledWindow.end.getTime() ||
+        digest.windowStart.getTime() !== scheduledWindow.start.getTime()
+      : isDigestWindowExpired(
+          digest.windowEnd,
+          input.now ?? new Date(),
+          preference.timezone,
+          preference.hour,
+        )
   ) {
+    if (stored.updateRevision) return { ok: true, skipped: true, skippedStatus: 'skipped' };
     await input.db
       .update(dailyDigests)
       .set({
@@ -125,7 +148,7 @@ export async function sendDailyDigest(input: {
   }
   const configuredDestinations = await listTeamDigestDestinations(input.db, digest.teamId);
   const personal =
-    configuredDestinations.length === 0
+    configuredDestinations.length === 0 && !stored.updateRevision
       ? [
           {
             id: 'email-default',
@@ -140,25 +163,55 @@ export async function sendDailyDigest(input: {
   if (personal.length === 0) {
     return { ok: true, skipped: true, skippedStatus: 'skipped' };
   }
-  const stored = digest.payload as DailyDigestPayload;
   const { payload, hasVisibleChanges } = await presentSavedViewDigest(
     withTeam(input.db, digest.teamId, digest.userId),
     stored,
     input.now ?? new Date(),
   );
-  if (payload.savedViewsOnly && !hasVisibleChanges) {
+  if (
+    (payload.savedViewsOnly || stored.evidenceIds?.length || stored.blockerIds?.length) &&
+    !hasVisibleChanges
+  ) {
     return { ok: true, skipped: true, skippedStatus: 'skipped' };
   }
+  const digestUrl = stored.updateRevision ? new URL(input.digestUrl) : null;
+  digestUrl?.searchParams.set('team', digest.teamId);
   const results: SendMessageResult[] = [];
   for (const destination of personal) {
+    let contact: PersonalDigestRecipient | null = null;
+    if (stored.updateRevision) {
+      const latest = await getDigestPreference({
+        db: input.db,
+        teamId: digest.teamId,
+        userId: digest.userId,
+      });
+      if (
+        !latest.enabled ||
+        latest.revision !== stored.updateRevision ||
+        latest.options?.destination !== 'personal'
+      )
+        break;
+      const role = await withTeam(input.db, digest.teamId, digest.userId)
+        .requireMembership()
+        .catch(() => null);
+      if (!role || !['owner', 'admin', 'member'].includes(role)) break;
+      const latestDestinations = await listTeamDigestDestinations(input.db, digest.teamId);
+      const enabled = personalDigestDestinations(latestDestinations).some(
+        (item) => item.id === destination.id,
+      );
+      if (!enabled) continue;
+      contact = await configuredPersonalDigestRecipient(input.db, destination, digest.userId);
+      if (!contact) continue;
+    }
     results.push(
       await deliverPersonalDigestDestination({
         db: input.db,
         digest,
         destination,
-        email: recipient.email,
-        digestUrl: input.digestUrl,
-        payload,
+        email: contact?.kind === 'email_members' ? contact.email : recipient.email,
+        contact,
+        digestUrl: digestUrl?.href ?? input.digestUrl,
+        payload: stored.updateRevision ? updateNotice(payload, stored.updateRevision) : payload,
         ...(input.fetch ? { fetch: input.fetch } : {}),
       }),
     );
@@ -178,13 +231,122 @@ export async function sendDailyDigest(input: {
             deliveryId: result.deliveryId ?? null,
           }
         : {
-            status: result.ok ? ('sent' as const) : ('failed' as const),
+            status: result.ok
+              ? ('sent' as const)
+              : stored.updateRevision
+                ? ('generated' as const)
+                : ('failed' as const),
             sentAt: result.ok ? new Date() : null,
             error: result.error ?? null,
             deliveryId: result.deliveryId ?? null,
           };
   await input.db.update(dailyDigests).set(digestUpdate).where(eq(dailyDigests.id, input.digestId));
   return result;
+}
+
+const updateDestinationKinds = {
+  email: 'email_members',
+  telegram: 'telegram_dm_members',
+  slack: 'slack_dm_members',
+} satisfies Record<Exclude<UpdateSettings['channel'], 'workspace'>, TeamDigestDestination['kind']>;
+
+export async function sendScheduledUpdate(input: {
+  db: Db;
+  teamId: string;
+  userId: string;
+  runId: string;
+  digestUrl: string;
+  fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
+  now?: Date;
+}): Promise<SendMessageResult> {
+  const { db, teamId, userId, runId } = input;
+  const scope = withTeam(db, teamId, userId);
+  const role = await scope.requireMembership();
+  const skipped = { ok: true, skipped: true, skippedStatus: 'skipped' } as const;
+  if (!['owner', 'admin', 'member'].includes(role)) return skipped;
+
+  const run = await scope.updates.findDeliveryRun(runId);
+  if (!run || run.scheduleKey === HOME_UPDATE_KEY || run.status === 'skipped') return skipped;
+  if (run.status === 'sent') return { ...skipped, skippedStatus: 'sent' };
+
+  const stored = run.payload as DailyDigestPayload;
+  const report = stored.update;
+  if (!report) return skipped;
+  const now = input.now ?? new Date();
+  if (now.getTime() - run.windowEnd.getTime() >= UPDATE_DISPATCH_GRACE_MS) return skipped;
+
+  const digestUrl = new URL(input.digestUrl);
+  digestUrl.searchParams.set('team', teamId);
+  const destinations = personalDigestDestinations(await listTeamDigestDestinations(db, teamId));
+  const results: SendMessageResult[] = [];
+  for (const destination of destinations) {
+    const { schedule, timezone } = await scope.updates.current(run.scheduleKey);
+    if (
+      !schedule?.settings.enabled ||
+      schedule.revision !== report.revision ||
+      latestUpdateTime(schedule.settings, timezone, now).getTime() !== run.windowEnd.getTime()
+    )
+      break;
+    const channel = schedule.settings.channel;
+    if (channel !== 'workspace' && destination.kind !== updateDestinationKinds[channel]) continue;
+    if (
+      !personalDigestDestinations(await listTeamDigestDestinations(db, teamId)).some(
+        (enabled) => enabled.id === destination.id,
+      )
+    )
+      continue;
+    const contact = await configuredPersonalDigestRecipient(db, destination, userId);
+    if (!contact) continue;
+
+    const visible = await presentUpdateReport(scope, stored, now);
+    if (!visible.update?.groups.length) break;
+    const payload = schedule.settings.includeContent
+      ? visible
+      : updateNotice(visible, report.revision);
+    results.push(
+      await deliverPersonalDigestDestination({
+        db,
+        digest: run,
+        destination,
+        email: contact.kind === 'email_members' ? contact.email : '',
+        contact,
+        digestUrl: digestUrl.href,
+        payload,
+        scheduled: true,
+        ...(input.fetch ? { fetch: input.fetch } : {}),
+      }),
+    );
+  }
+
+  const result = rollupDeliveryResults(results);
+  if (result.skipped && result.skippedStatus !== 'sent') return result;
+  await scope.updates.recordDelivery(runId, {
+    status: result.ok ? 'sent' : 'failed',
+    sentAt: result.ok ? now : null,
+    error: result.error ?? null,
+    deliveryId: result.deliveryId ?? null,
+  });
+  return result;
+}
+
+function updateNotice(payload: DailyDigestPayload, revision: string): DailyDigestPayload {
+  return {
+    updateRevision: revision,
+    teamName: 'your workspace',
+    userName: null,
+    ...(payload.timezone ? { timezone: payload.timezone } : {}),
+    windowStart: payload.windowStart,
+    windowEnd: payload.windowEnd,
+    summary: 'A new update is ready. Open Timeline to read it.',
+    pendingApprovals: 0,
+    eventCount: 0,
+    sourceDistribution: {},
+    objectChangesByType: {},
+    newTeamMembers: [],
+    tasks: [],
+    upcomingCalendar: [],
+    links: [],
+  };
 }
 
 export async function sendWorkspaceDailyDigest(input: {
@@ -213,8 +375,14 @@ export async function sendWorkspaceDailyDigest(input: {
   if (generated.skipped) {
     return { ok: true, skipped: true, skippedStatus: 'skipped' };
   }
+  const current = new Set(
+    sharedDigestDestinations(await listTeamDigestDestinations(input.db, input.teamId)).map(
+      (destination) => destination.id,
+    ),
+  );
   const results: SendMessageResult[] = [];
   for (const destination of destinations) {
+    if (!current.has(destination.id)) continue;
     results.push(
       await deliverSharedDigestDestination({
         db: input.db,
@@ -230,7 +398,8 @@ export async function sendWorkspaceDailyDigest(input: {
 }
 
 function rollupDeliveryResults(results: SendMessageResult[]): SendMessageResult {
-  const failed = results.find((result) => !result.ok && !result.skipped);
+  const failures = results.filter((result) => !result.ok && !result.skipped);
+  const failed = failures.find((result) => result.retryable !== false) ?? failures[0];
   if (failed) return failed;
   const sent =
     [...results].reverse().find((result) => result.ok && !result.skipped) ??
@@ -243,9 +412,11 @@ function rollupDeliveryResults(results: SendMessageResult[]): SendMessageResult 
 
 async function deliverPersonalDigestDestination(input: {
   db: Db;
-  digest: typeof dailyDigests.$inferSelect;
+  digest: typeof dailyDigests.$inferSelect | typeof updateRuns.$inferSelect;
   destination: TeamDigestDestination;
   email: string;
+  contact: PersonalDigestRecipient | null;
+  scheduled?: boolean;
   digestUrl: string;
   payload: DailyDigestPayload;
   fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
@@ -260,19 +431,43 @@ async function deliverPersonalDigestDestination(input: {
   if (input.destination.kind === 'email_members') {
     return sendMessage(
       'daily_digest',
-      { to: input.email, digestUrl: input.digestUrl, payload: input.payload },
+      {
+        to: input.email,
+        digestUrl: input.digestUrl,
+        payload: input.payload,
+        ...(input.scheduled ? { teamId: input.digest.teamId } : {}),
+      },
       {
         db: input.db,
         teamId: input.digest.teamId,
         userId: input.digest.userId,
         dedupeKey,
+        ...(input.scheduled || input.payload.updateRevision
+          ? { requireCurrentEmailPayload: true }
+          : {}),
         ...(input.fetch ? { fetch: input.fetch } : {}),
       },
     );
   }
-  const text = formatDigestChatText({ payload: input.payload, digestUrl: input.digestUrl });
-  if (input.destination.kind === 'slack_dm_members') {
-    const slackUserId = await linkedSlackUserId(input.db, input.digest.teamId, input.digest.userId);
+  const channel = input.destination.kind === 'slack_dm_members' ? 'slack' : 'telegram';
+  const text = input.scheduled
+    ? formatUpdateChatText({
+        payload: input.payload,
+        digestUrl: input.digestUrl,
+        teamId: input.digest.teamId,
+        channel,
+      })
+    : formatDigestChatText({ payload: input.payload, digestUrl: input.digestUrl });
+  const subject = input.payload.update
+    ? updateSubject(input.payload)
+    : input.payload.updateRevision
+      ? 'Timeline update'
+      : `Daily digest for ${input.payload.teamName}`;
+  if (channel === 'slack') {
+    const slackUserId =
+      input.contact?.kind === 'slack_dm_members'
+        ? input.contact.slackUserId
+        : await linkedSlackUserId(input.db, input.digest.teamId, input.digest.userId);
     if (!slackUserId) {
       return { ok: true, skipped: true, skippedStatus: 'skipped' };
     }
@@ -282,7 +477,7 @@ async function deliverPersonalDigestDestination(input: {
       provider: 'slack',
       teamId: input.digest.teamId,
       userId: input.digest.userId,
-      subject: `Daily digest for ${input.payload.teamName}`,
+      subject,
       dedupeKey,
       metadata: { slack_user_id: slackUserId },
       send: () =>
@@ -291,14 +486,14 @@ async function deliverPersonalDigestDestination(input: {
           teamId: input.digest.teamId,
           slackUserId,
           text,
+          ...(input.scheduled ? { scheduledUpdate: true } : {}),
         }),
     });
   }
-  const telegramChatId = await linkedTelegramChatId(
-    input.db,
-    input.digest.teamId,
-    input.digest.userId,
-  );
+  const telegramChatId =
+    input.contact?.kind === 'telegram_dm_members'
+      ? input.contact.chatId
+      : await linkedTelegramChatId(input.db, input.digest.teamId, input.digest.userId);
   if (telegramChatId === null) {
     return { ok: true, skipped: true, skippedStatus: 'skipped' };
   }
@@ -312,7 +507,7 @@ async function deliverPersonalDigestDestination(input: {
     provider: 'telegram',
     teamId: input.digest.teamId,
     userId: input.digest.userId,
-    subject: `Daily digest for ${input.payload.teamName}`,
+    subject,
     dedupeKey,
     metadata: { telegram_chat_id: telegramChatId },
     send: () =>
@@ -321,6 +516,7 @@ async function deliverPersonalDigestDestination(input: {
         text,
         token,
         teamId: input.digest.teamId,
+        ...(input.scheduled ? { scheduledUpdate: true } : {}),
       }),
   });
 }
@@ -435,28 +631,4 @@ async function deliverBotDigest(input: {
     }
     return { ok: false, ...(deliveryId ? { deliveryId } : {}), error, retryable };
   }
-}
-
-async function linkedSlackUserId(db: Db, teamId: string, userId: string): Promise<string | null> {
-  const rows = await db
-    .select({ slackUserId: slackUsers.slackUserId })
-    .from(slackUserTeams)
-    .innerJoin(slackUsers, eq(slackUsers.id, slackUserTeams.slackUserId))
-    .where(and(eq(slackUserTeams.teamId, teamId), eq(slackUserTeams.userId, userId)))
-    .limit(1);
-  return rows[0]?.slackUserId ?? null;
-}
-
-async function linkedTelegramChatId(
-  db: Db,
-  teamId: string,
-  userId: string,
-): Promise<number | null> {
-  const rows = await db
-    .select({ tgUserId: telegramUsers.tgUserId })
-    .from(telegramUserTeams)
-    .innerJoin(telegramUsers, eq(telegramUserTeams.telegramUserId, telegramUsers.id))
-    .where(and(eq(telegramUserTeams.teamId, teamId), eq(telegramUsers.userId, userId)))
-    .limit(1);
-  return rows[0]?.tgUserId ?? null;
 }

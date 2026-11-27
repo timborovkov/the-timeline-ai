@@ -1,8 +1,18 @@
-import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
+import {
+  formatSidebarBillingLabels,
+  type SidebarBillingSummary,
+} from '@timeline/shared/billing/status';
 import Link from 'next/link';
 import { use } from 'react';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import { formatDisplayDateParts } from '@/lib/display-dates';
+import {
+  formatDisplayCurrency,
+  formatDisplayPercent,
+  type RegionalFormat,
+} from '@/lib/regional-format';
 import { cn } from '@/lib/utils';
 
 function UsageBar({
@@ -58,6 +68,7 @@ function SidebarBillingSummaryView({
   expanded: boolean;
   className?: string;
 }) {
+  const region = useRegionalFormat();
   if (!summary.canManageBilling) {
     if (!summary.atLimit) return null;
     const label = memberLimitLabel(summary.planId);
@@ -79,13 +90,12 @@ function SidebarBillingSummaryView({
     );
   }
 
-  const tooltip = [
-    summary.planName,
-    summary.detailLabel,
-    summary.secondaryLabel,
-    summary.resetLabel,
-    summary.warningLabel,
-  ]
+  const reset = getSidebarReset(summary, region);
+  const { detailLabel, secondaryLabel } = formatSidebarBillingLabels(summary, {
+    percent: (value) => formatDisplayPercent(value / 100, region.locale),
+    euros: (cents) => formatDisplayCurrency(cents, 'EUR', region.locale, true),
+  });
+  const tooltip = [summary.planName, detailLabel, secondaryLabel, reset.label, summary.warningLabel]
     .filter(Boolean)
     .join(' · ');
 
@@ -137,16 +147,37 @@ function SidebarBillingSummaryView({
     >
       <p className="truncate text-xs font-medium text-fg">{summary.planName}</p>
       <UsageBar percent={summary.progressPercent} atLimit={summary.atLimit} className="mt-2" />
-      <p className="mt-1.5 truncate text-[0.7rem] leading-4 text-fg-muted">{summary.detailLabel}</p>
-      {summary.resetLabel ? (
-        <p className="mt-1 text-[0.7rem] leading-4 text-fg-muted">{summary.resetLabel}</p>
+      <p className="mt-1.5 truncate text-[0.7rem] leading-4 text-fg-muted">{detailLabel}</p>
+      {reset.content ? (
+        <p className="mt-1 text-[0.7rem] leading-4 text-fg-muted">{reset.content}</p>
       ) : null}
       {summary.warningLabel ? (
         <p className="mt-1 text-xs text-danger">{summary.warningLabel}</p>
       ) : null}
-      {summary.secondaryLabel ? (
-        <p className="mt-1 text-[0.7rem] leading-4 text-fg-muted">{summary.secondaryLabel}</p>
+      {secondaryLabel ? (
+        <p className="mt-1 text-[0.7rem] leading-4 text-fg-muted">{secondaryLabel}</p>
       ) : null}
     </Link>
   );
+}
+
+function getSidebarReset(summary: SidebarBillingSummary, region: RegionalFormat) {
+  const { reset, resetLabel } = summary;
+  if (!reset) return { label: resetLabel, content: resetLabel };
+
+  const date = formatDisplayDateParts(reset.at, region, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+  return {
+    label: `${reset.label} ${date}`,
+    content: (
+      <>
+        {reset.label} <time dateTime={reset.at}>{date}</time>
+      </>
+    ),
+  };
 }

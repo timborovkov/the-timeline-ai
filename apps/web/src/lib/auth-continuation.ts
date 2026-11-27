@@ -2,7 +2,10 @@ import { createHash, randomBytes } from 'node:crypto';
 
 import { authContinuations, users, type Db } from '@timeline/db';
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
+import { decode, encode } from 'next-auth/jwt';
 
+import { isGuestInvitePath } from '@/lib/auth-redirect';
+import { authConfig } from '@/lib/auth.config';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -16,15 +19,59 @@ function authorizationDestination(value: string | null | undefined): string | nu
     : null;
 }
 
+const guestPrefix = 'guest:';
+const guestSalt = 'guest-invitation-email-continuation';
+
+async function encodeDestination(destination: string, userId: string): Promise<string> {
+  if (!isGuestInvitePath(destination)) return destination;
+  const secret = authConfig.secret;
+  if (!secret) throw new Error('AUTH_SECRET is required');
+  // The guest invitation itself is a credential. Keep the existing
+  // continuation opaque without adding a copy of that credential to the DB.
+  return (
+    guestPrefix +
+    (await encode({
+      token: { sub: userId, destination },
+      secret,
+      salt: guestSalt,
+      maxAge: 86400,
+    }))
+  );
+}
+
+async function decodeDestination(
+  stored: string | undefined,
+  userId: string,
+): Promise<string | null> {
+  if (!stored?.startsWith(guestPrefix)) return authorizationDestination(stored);
+  const secret = authConfig.secret;
+  if (!secret) return null;
+  try {
+    const token = await decode({
+      token: stored.slice(guestPrefix.length),
+      secret,
+      salt: guestSalt,
+    });
+    return token?.sub === userId &&
+      typeof token.destination === 'string' &&
+      isGuestInvitePath(token.destination)
+      ? token.destination
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function createAuthContinuation(
   db: Db,
   userId: string,
   callback?: string,
 ): Promise<string | undefined> {
-  const requested = authorizationDestination(callback);
+  const safe = safeSameOriginPath(callback, '', { blockedPaths: ['/sign-in', '/sign-up'] });
+  const requested = isGuestInvitePath(safe) ? safe : authorizationDestination(safe);
   return db.transaction(async (tx) => {
     // Account-menu resends pass the current page, not the original authorize URL.
-    // Keep the latest live account-bound OAuth destination in that case.
+    // Keep the latest live account-bound destination in that case.
     const [pending] = requested
       ? []
       : await tx
@@ -35,7 +82,7 @@ export async function createAuthContinuation(
           )
           .orderBy(desc(authContinuations.expiresAt))
           .limit(1);
-    const destination = requested ?? authorizationDestination(pending?.destination);
+    const destination = requested ?? (await decodeDestination(pending?.destination, userId));
     if (!destination) return undefined;
     const token = randomBytes(32).toString('base64url');
     const now = new Date();
@@ -43,7 +90,7 @@ export async function createAuthContinuation(
     await tx.insert(authContinuations).values({
       tokenHash: digest(token),
       userId,
-      destination,
+      destination: await encodeDestination(destination, userId),
       expiresAt: new Date(now.getTime() + 86400000),
     });
     return token;
@@ -100,7 +147,7 @@ export async function resolveAuthContinuation(
   const tokenHash = digest(token);
   return db.transaction(async (tx) => {
     const [row] = await tx
-      .select({ destination: authContinuations.destination })
+      .select({ destination: authContinuations.destination, userId: authContinuations.userId })
       .from(authContinuations)
       .innerJoin(users, eq(users.id, authContinuations.userId))
       .where(
@@ -114,7 +161,7 @@ export async function resolveAuthContinuation(
       .for('update');
     if (!row) return null;
     await tx.delete(authContinuations).where(eq(authContinuations.tokenHash, tokenHash));
-    return authorizationDestination(row.destination);
+    return decodeDestination(row.destination, row.userId);
   });
 }
 

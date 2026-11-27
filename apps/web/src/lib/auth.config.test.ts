@@ -61,6 +61,17 @@ describe('hasCurrentLegalSession', () => {
 });
 
 describe('authorizeProductRequest', () => {
+  it('requires sign-in and current legal acceptance for personal account settings', () => {
+    const account = request('/account');
+    const signedOut = authorizeProductRequest({ auth: null, request: account });
+    const needsAcceptance = authorizeProductRequest({ auth: session(false), request: account });
+    expect((signedOut as Response).headers.get('location')).toContain('/sign-in?callbackUrl=');
+    expect((needsAcceptance as Response).headers.get('location')).toContain(
+      '/legal/accept?returnTo=',
+    );
+    expect(authorizeProductRequest({ auth: session(), request: account })).toBe(true);
+  });
+
   it('allows exiting impersonation with stale legal acceptance', () => {
     expect(
       authorizeProductRequest({

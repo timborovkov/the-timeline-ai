@@ -1,9 +1,17 @@
+import { nextScheduledUpdateRecipientJob } from '@timeline/shared/messaging';
 import { PlatformAccessError } from '@timeline/shared/platform-admin';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   defaultDigestWindow: vi.fn(),
+  generateScheduledUpdate: vi.fn(),
+  listUpdateDispatchCandidates: vi.fn(),
+  latestUpdateTime: vi.fn(),
+  enqueueScheduledUpdateJob: vi.fn(),
+  enqueueScheduledUpdateSendJob: vi.fn(),
+  scheduledUpdateWindow: vi.fn(),
+  nextScheduledUpdateWindow: vi.fn(),
   getDigestPreference: vi.fn(),
   getWorkspaceDigestSchedule: vi.fn(),
   listDailyDigestRecipients: vi.fn(),
@@ -26,6 +34,14 @@ await vi.mock(
     childLogger: () => fakes.log,
     messaging: {
       defaultDigestWindow: fakes.defaultDigestWindow,
+      HOME_UPDATE_KEY: 'home',
+      UPDATE_DISPATCH_GRACE_MS: 7_200_000,
+      generateScheduledUpdate: fakes.generateScheduledUpdate,
+      listUpdateDispatchCandidates: fakes.listUpdateDispatchCandidates,
+      latestUpdateTime: fakes.latestUpdateTime,
+      scheduledUpdateWindow: fakes.scheduledUpdateWindow,
+      nextScheduledUpdateWindow: fakes.nextScheduledUpdateWindow,
+      nextScheduledUpdateRecipientJob,
       getDigestPreference: fakes.getDigestPreference,
       listDailyDigestRecipients: fakes.listDailyDigestRecipients,
       generateDailyDigest: fakes.generateDailyDigest,
@@ -37,6 +53,8 @@ await vi.mock(
     queue: {
       QUEUE_NAMES: { dailyDigest: 'daily-digest' },
       getRedisConnection: vi.fn(),
+      enqueueScheduledUpdateJob: fakes.enqueueScheduledUpdateJob,
+      enqueueScheduledUpdateSendJob: fakes.enqueueScheduledUpdateSendJob,
       enqueueDailyDigestRecipientJob: fakes.enqueueDailyDigestRecipientJob,
       enqueueDailyDigestSendJob: fakes.enqueueDailyDigestSendJob,
       enqueueDailyDigestWorkspaceSendJob: fakes.enqueueDailyDigestWorkspaceSendJob,
@@ -45,6 +63,11 @@ await vi.mock(
   () => import('@timeline/shared'),
 );
 
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({ withTeam: () => ({}) }),
+  () => import('@timeline/shared/team-scope'),
+);
 await vi.mock(
   import.meta.resolve('bullmq'),
   async () => ({
@@ -91,6 +114,80 @@ describe('daily digest worker', () => {
     fakes.Worker.mockImplementation((..._args: unknown[]) => ({ on: vi.fn() }));
   });
 
+  it('queues a configured update for the upcoming local boundary without a new tick', async () => {
+    const upcoming = new Date(Date.now() + 60 * 60 * 1000);
+    const current = new Date(upcoming.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const previous = new Date(current.getTime() - 7 * 24 * 60 * 60 * 1000);
+    fakes.listDailyDigestRecipients.mockResolvedValue([
+      { teamId: 'team-1', userId: 'user-1', email: 'member@example.test' },
+    ]);
+    fakes.getDigestPreference.mockResolvedValue({
+      enabled: true,
+      hour: 12,
+      timezone: 'America/New_York',
+      options: { cadence: 'weekly' },
+      revision: new Date(current.getTime() + 1).toISOString(),
+    });
+    fakes.scheduledUpdateWindow.mockReturnValue({ start: previous, end: current });
+    fakes.nextScheduledUpdateWindow.mockReturnValue({ start: current, end: upcoming });
+    await processDailyDigestJob({ db: {} as never }, { kind: 'tick', reason: 'scheduled' });
+    expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledOnce();
+    expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        windowStart: current.toISOString(),
+        windowEnd: upcoming.toISOString(),
+      }),
+      expect.any(Number),
+    );
+    expect(fakes.enqueueDailyDigestRecipientJob.mock.calls[0]?.[1]).toBeGreaterThan(0);
+  });
+
+  it('replaces the Helsinki window with Tokyo Monday noon for the requested workspace only', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-22T18:00:00.000Z'));
+    const eligible = { teamId: 'team-1', userId: 'user-1', email: 'eligible@example.test' };
+    fakes.listDailyDigestRecipients.mockResolvedValue([
+      eligible,
+      { teamId: 'team-1', userId: 'paused', email: 'paused@example.test' },
+      { teamId: 'team-1', userId: 'legacy', email: 'legacy@example.test' },
+    ]);
+    const selected = {
+      enabled: true,
+      hour: 12,
+      timezone: 'Asia/Tokyo',
+      options: { cadence: 'weekly' },
+    };
+    fakes.getDigestPreference
+      .mockResolvedValueOnce(selected)
+      .mockResolvedValueOnce({ ...selected, enabled: false })
+      .mockResolvedValueOnce({ ...selected, options: undefined });
+
+    try {
+      const db = {} as never;
+      await processDailyDigestJob({ db }, { kind: 'workspace-reschedule', teamId: 'team-1' });
+      expect(fakes.listDailyDigestRecipients).toHaveBeenCalledOnce();
+      expect(fakes.listDailyDigestRecipients).toHaveBeenCalledWith(db, {
+        teamId: 'team-1',
+      });
+      expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledOnce();
+      expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledWith(
+        {
+          kind: 'recipient',
+          ...eligible,
+          windowStart: '2026-11-16T03:00:00.000Z',
+          windowEnd: '2026-11-23T03:00:00.000Z',
+        },
+        32_400_000,
+      );
+      expect(fakes.listWorkspaceDigestTeamIds).not.toHaveBeenCalled();
+      expect(fakes.generateDailyDigest).not.toHaveBeenCalled();
+      expect(fakes.enqueueDailyDigestSendJob).not.toHaveBeenCalled();
+      expect(fakes.sendWorkspaceDailyDigest).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('fans out one recipient job per active member using their digest timezone', async () => {
     fakes.listDailyDigestRecipients.mockResolvedValue([
       { teamId: 'team-1', userId: 'user-1', email: 'a@example.test' },
@@ -118,35 +215,13 @@ describe('daily digest worker', () => {
     );
   });
 
-  it('uses recipient digest timezone for catch-up jobs even when legacy windows are present', async () => {
-    fakes.listDailyDigestRecipients.mockResolvedValue([
-      { teamId: 'team-1', userId: 'user-1', email: 'a@example.test' },
-    ]);
-
+  it('keeps catch-up on shared destinations for members without a configured legacy profile', async () => {
+    fakes.listWorkspaceDigestTeamIds.mockResolvedValue(['team-1']);
     await expect(
-      processDailyDigestJob(
-        { db: {} as never },
-        {
-          kind: 'tick',
-          reason: 'catchup',
-          windowStart: '2026-06-15T12:00:00.000Z',
-          windowEnd: '2026-06-16T12:00:00.000Z',
-        },
-      ),
-    ).resolves.toEqual({ recipients: 1 });
-
-    expect(fakes.getDigestPreference).toHaveBeenCalledWith({
-      db: {},
-      teamId: 'team-1',
-      userId: 'user-1',
-    });
-    expect(fakes.defaultDigestWindow).toHaveBeenCalledWith(expect.any(Date), 'Europe/Helsinki', 12);
-    expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledWith(
-      expect.objectContaining({
-        windowStart: '2026-06-13T12:00:00.000Z',
-        windowEnd: '2026-06-14T12:00:00.000Z',
-      }),
-    );
+      processDailyDigestJob({ db: {} as never }, { kind: 'tick', reason: 'catchup' }),
+    ).resolves.toEqual({ recipients: 0 });
+    expect(fakes.enqueueDailyDigestRecipientJob).not.toHaveBeenCalled();
+    expect(fakes.enqueueDailyDigestWorkspaceSendJob).toHaveBeenCalledOnce();
   });
 
   it('uses an explicit window for non-catch-up tick jobs', async () => {
@@ -166,13 +241,72 @@ describe('daily digest worker', () => {
     ).resolves.toEqual({ recipients: 1 });
 
     expect(fakes.defaultDigestWindow).not.toHaveBeenCalled();
-    expect(fakes.getDigestPreference).not.toHaveBeenCalled();
+    expect(fakes.getDigestPreference).toHaveBeenCalledOnce();
     expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledWith(
       expect.objectContaining({
         windowStart: '2026-06-15T12:00:00.000Z',
         windowEnd: '2026-06-16T12:00:00.000Z',
       }),
     );
+  });
+
+  it('queues currently due profiles and leaves future or newly edited slots alone', async () => {
+    const due = new Date(Date.now() - 60_000);
+    fakes.latestUpdateTime.mockReturnValue(due);
+    const candidate = {
+      teamId: 'team-1',
+      userId: 'user-1',
+      revision: 'initial',
+      key: 'default',
+      settings: {},
+      timezone: 'UTC',
+      joinedAt: new Date('2020-01-01'),
+      changedAt: null,
+    };
+    fakes.listUpdateDispatchCandidates.mockResolvedValue([
+      candidate,
+      { ...candidate, key: 'home' },
+      { ...candidate, key: 'edited', changedAt: new Date() },
+      { ...candidate, key: 'new-membership', joinedAt: new Date() },
+    ]);
+    await expect(
+      processDailyDigestJob({ db: {} as never }, { kind: 'updates-tick' }),
+    ).resolves.toEqual({ recipients: 2 });
+    expect(fakes.enqueueScheduledUpdateJob).toHaveBeenCalledWith({
+      kind: 'update',
+      teamId: 'team-1',
+      userId: 'user-1',
+      revision: 'initial',
+      scheduleKey: 'default',
+      windowEnd: due.toISOString(),
+    });
+    expect(fakes.enqueueScheduledUpdateJob).toHaveBeenCalledWith(
+      expect.objectContaining({ scheduleKey: 'home' }),
+    );
+  });
+
+  it('hands a generated personal update to delivery and keeps the Home brief in app', async () => {
+    fakes.generateScheduledUpdate.mockResolvedValue('digest-1');
+    const data = {
+      kind: 'update' as const,
+      teamId: 'team-1',
+      userId: 'user-1',
+      scheduleKey: 'default',
+      revision: 'initial',
+      windowEnd: '2026-06-14T12:00:00.000Z',
+    };
+    await expect(processDailyDigestJob({ db: {} as never }, data)).resolves.toEqual({
+      digestId: 'digest-1',
+      skipped: false,
+    });
+    expect(fakes.enqueueScheduledUpdateSendJob).toHaveBeenCalledWith({
+      kind: 'update-send',
+      digestId: 'digest-1',
+      teamId: 'team-1',
+      userId: 'user-1',
+    });
+    await processDailyDigestJob({ db: {} as never }, { ...data, scheduleKey: 'home' });
+    expect(fakes.enqueueScheduledUpdateSendJob).toHaveBeenCalledOnce();
   });
 
   it('enqueues a send job after generating a digest', async () => {

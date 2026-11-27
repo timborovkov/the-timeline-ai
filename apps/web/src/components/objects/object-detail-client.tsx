@@ -9,7 +9,7 @@ import {
 } from '@timeline/shared/citation';
 import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import type * as objects from '@timeline/shared/objects/types';
-import { presentDueDate } from '@timeline/shared/time';
+import { dateOnlyDueDateKey, localDateFromInstant, presentDueDate } from '@timeline/shared/time';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -50,7 +50,10 @@ import { CitationMarker } from '@/components/chat/citation-marker';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
-import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
+import {
+  MetadataDateEditor,
+  MetadataDueDateEditor,
+} from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectBoardContext } from '@/components/objects/object-board-context';
 import { ObjectBoardContextSection } from '@/components/objects/object-board-context-section';
@@ -79,6 +82,7 @@ import {
 } from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 import { PersonCompanySelect } from '@/components/objects/person-company-select';
+import { RegionalDate } from '@/components/regional-date';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
@@ -87,15 +91,21 @@ import { DetailRail } from '@/components/ui/detail-rail';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { ShowMoreList } from '@/components/ui/show-more-list';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat, useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { readJson } from '@/lib/api-response';
-import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import {
+  displayText,
+  formatDisplayDate,
+  formatDisplayDateTime,
+  parseDisplayDate,
+} from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { notifyAction } from '@/lib/notify';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { statusOptionsForType } from '@/lib/object-status-options';
 import { displayObjectTitle } from '@/lib/object-title';
 import { queryKeys } from '@/lib/query-keys';
+import { formatDisplayNumber, type RegionalFormat } from '@/lib/regional-format';
 import { relationshipDisplayLabel } from '@/lib/relationship-display-label';
 import { statusLabel } from '@/lib/status-labels';
 import { TASK_STATUS_COLUMNS, taskDisplayStatus } from '@/lib/task-statuses';
@@ -114,7 +124,14 @@ const RELATIONSHIP_KINDS = [
 type ObjectDetail = objects.ObjectDetail;
 type LocalSuggestion = ComponentProps<typeof ApprovalsClient>['suggestions'][number];
 type EditableField =
-  'canonicalName' | 'aliases' | 'status' | 'stage' | 'priority' | 'dueAt' | 'assigneeUserId';
+  | 'canonicalName'
+  | 'aliases'
+  | 'status'
+  | 'stage'
+  | 'priority'
+  | 'dueAt'
+  | 'plannedDate'
+  | 'assigneeUserId';
 type EditableValue = string | number | Date | readonly string[] | null;
 type DraftField = 'canonicalName' | 'aliases' | 'stage' | 'dueAt';
 
@@ -205,6 +222,7 @@ function isDraftField(field: EditableField): field is DraftField {
 function objectFieldLabel(field: EditableField): string {
   if (field === 'canonicalName') return 'name';
   if (field === 'dueAt') return 'due date';
+  if (field === 'plannedDate') return 'planned date';
   return field;
 }
 
@@ -224,6 +242,7 @@ function isEditableFieldName(field: string): field is EditableField {
     field === 'stage' ||
     field === 'priority' ||
     field === 'dueAt' ||
+    field === 'plannedDate' ||
     field === 'assigneeUserId'
   );
 }
@@ -395,6 +414,7 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
     stage: undefined,
     priority: undefined,
     dueAt: undefined,
+    plannedDate: undefined,
     assigneeUserId: undefined,
   });
   const savingCountRef = useRef(0);
@@ -418,6 +438,7 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
     stage: 0,
     priority: 0,
     dueAt: 0,
+    plannedDate: 0,
     assigneeUserId: 0,
   });
   useLayoutEffect(() => {
@@ -438,6 +459,7 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
         stage: next.stage,
         priority: next.priority,
         dueAt: next.dueAt,
+        plannedDate: next.plannedDate ?? null,
         assigneeUserId: next.assigneeUserId,
       },
     }));
@@ -487,7 +509,7 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
   }
 
   function patch(field: EditableField, value: EditableValue): void {
-    const currentValue = localDetailRef.current[field];
+    const currentValue = localDetailRef.current[field] ?? null;
     if (sameEditableValue(field, currentValue, value)) return;
     dispatchObjectUi({ error: null });
     updateLocalDetail((current) => ({ ...current, [field]: value }));
@@ -525,17 +547,21 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
             id: detail.id,
             [field]: serializeEditableValue(value),
           }),
-        undo: {
-          run: async () => {
-            applyFieldLocally(field, previousValue);
-            const undoResult = await updateObjectAction({
-              id: detail.id,
-              [field]: serializeEditableValue(previousValue),
-            });
-            if (!undoResult.error) router.refresh();
-            return undoResult;
-          },
-        },
+        ...(field === 'plannedDate'
+          ? {}
+          : {
+              undo: {
+                run: async () => {
+                  applyFieldLocally(field, previousValue);
+                  const undoResult = await updateObjectAction({
+                    id: detail.id,
+                    [field]: serializeEditableValue(previousValue),
+                  });
+                  if (!undoResult.error) router.refresh();
+                  return undoResult;
+                },
+              },
+            }),
       });
       if (result.error) {
         handleFieldSaveFailure(field, value, result.error);
@@ -555,7 +581,10 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
       queuedFieldValuesRef.current[field] === undefined &&
       sameEditableValue(field, localDetailRef.current[field], value)
     ) {
-      applyFieldLocally(field, field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue);
+      applyFieldLocally(
+        field,
+        field === 'dueAt' ? toDateOrNull(rollbackValue) : (rollbackValue ?? null),
+      );
     }
   }
 
@@ -573,7 +602,7 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
         lastSuccessfulValue ??
         (field === 'dueAt'
           ? toDateOrNull(serverDetailRef.current[field])
-          : serverDetailRef.current[field]);
+          : (serverDetailRef.current[field] ?? null));
       beginFieldSave(field, queuedValue, previousForQueued, {
         preserveBatchFailure: batchHadFailureRef.current,
       });
@@ -1297,7 +1326,6 @@ function ObjectSourceContext({ detail }: { detail: ObjectDetail }) {
 }
 
 function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
-  const timezone = useWorkspaceTimezone();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const summary = detail.summary ?? null;
@@ -1335,7 +1363,6 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
         <ObjectSummaryActions
           generated={generated}
           summary={summary}
-          timezone={timezone}
           canRequest={canRequest}
           pending={pending}
           requestSummary={requestSummary}
@@ -1349,7 +1376,6 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
 function ObjectSummaryActions({
   generated,
   summary,
-  timezone,
   canRequest,
   pending,
   requestSummary,
@@ -1363,18 +1389,19 @@ function ObjectSummaryActions({
     conflicts: objects.ObjectSummaryClaim[];
   } | null;
   summary: objects.ObjectSummaryView;
-  timezone: string;
   canRequest: boolean;
   pending: boolean;
   requestSummary: () => void;
   actionLabel: string;
 }) {
+  const { locale } = useRegionalFormat();
   return (
     <div className="mt-1 flex flex-wrap items-center gap-2">
       {generated && summary.generatedAt ? (
         <p className={DETAIL_META_CLASS}>
-          Updated {formatDisplayDateTime(summary.generatedAt, { timezone })} ·{' '}
-          {summary.sourceRefs.length} {summary.sourceRefs.length === 1 ? 'source' : 'sources'}
+          Updated <RegionalDate value={summary.generatedAt} variant="datetime" /> ·{' '}
+          {formatDisplayNumber(summary.sourceRefs.length, locale)}{' '}
+          {summary.sourceRefs.length === 1 ? 'source' : 'sources'}
         </p>
       ) : summary.status === 'pending' ? (
         <p className={DETAIL_META_CLASS}>Generating</p>
@@ -1692,6 +1719,43 @@ function ObjectHeaderIdentity({
     </div>
   );
 }
+
+function TaskPlannedDateField({
+  detail,
+  title,
+  patch,
+}: {
+  detail: ObjectDetail;
+  title: string;
+  patch: (field: EditableField, value: EditableValue) => void;
+}) {
+  const { locale } = useRegionalFormat();
+  if (detail.type !== 'task') return null;
+  return (
+    <ObjectRailRow label="Planned date">
+      <EditableMetadata
+        label={`Planned date for ${displayText(title)}`}
+        className="min-h-8 min-w-0 flex-1 justify-start px-0 text-left text-sm text-fg [&>span]:whitespace-normal"
+      >
+        <EditableMetadata.Value>
+          {detail.plannedDate
+            ? formatDisplayDate(detail.plannedDate, { timezone: 'UTC', locale })
+            : 'Set date'}
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <MetadataDateEditor
+            label="Planned date"
+            defaultValue={detail.plannedDate ?? ''}
+            onApply={(value) => {
+              patch('plannedDate', value || null);
+            }}
+          />
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+    </ObjectRailRow>
+  );
+}
+
 function ObjectStatusField({
   detail,
   patch,
@@ -1808,13 +1872,16 @@ function ObjectEditableFields({
                 onApply={(value) => {
                   focusedDraftsRef.current.dueAt = false;
                   dispatchObjectUi({ dueDraft: value });
-                  patch('dueAt', value === '' ? null : new Date(`${value}T00:00:00.000Z`));
+                  if (value !== dueDraft) {
+                    patch('dueAt', value === '' ? null : new Date(`${value}T00:00:00.000Z`));
+                  }
                 }}
               />
             </EditableMetadata.Editor>
           </EditableMetadata>
         </ObjectRailRow>
       ) : null}
+      <TaskPlannedDateField detail={detail} title={title} patch={patch} />
       {detail.type === 'task' && detail.archivedAt ? (
         <p className="px-2 py-1 text-xs text-fg-muted">
           Unarchive this task to change its project or category.
@@ -2076,12 +2143,13 @@ function ConnectedWorkSection({
   count?: number;
   children: ReactNode;
 }) {
+  const { locale } = useRegionalFormat();
   return (
     <section className="min-w-0 py-2 first:pt-1.5">
       <h3 className={`mb-1 ${DETAIL_GROUP_LABEL_CLASS}`}>
         {title}
         {typeof count === 'number' && count > 0 ? (
-          <span className={DETAIL_COUNT_CLASS}> · {count}</span>
+          <span className={DETAIL_COUNT_CLASS}> · {formatDisplayNumber(count, locale)}</span>
         ) : null}
       </h3>
       {children}
@@ -2110,12 +2178,14 @@ function ConnectedTaskList({
   openTaskCount: number;
   doneTaskCount: number;
 }) {
+  const { locale } = useRegionalFormat();
   const openCount = Math.max(openTaskCount, openTasks.length);
   const doneCount = Math.max(doneTaskCount, recentTasks.length);
   return (
     <ConnectedWorkSection title="Tasks">
       <p className={`mb-1.5 ${DETAIL_COUNT_CLASS}`}>
-        Open {openCount} · Done {doneCount}
+        Open {formatDisplayNumber(openCount, locale)} · Done{' '}
+        {formatDisplayNumber(doneCount, locale)}
       </p>
       {canAdd ? (
         <ConnectedTaskComposer objectId={objectId} objectType={objectType} disabled={pending} />
@@ -2293,10 +2363,11 @@ function ConnectedTaskRow({
               />
             </EditableMetadata.Value>
             <EditableMetadata.Editor>
-              <MetadataDateEditor
-                defaultValue={toLocalInputValue(dueAt, timezone)}
+              <MetadataDueDateEditor
+                value={dueAt}
+                timezone={timezone}
                 onApply={(value) => {
-                  save('dueAt', value ? new Date(`${value}T00:00:00.000Z`) : null);
+                  save('dueAt', value);
                 }}
               />
             </EditableMetadata.Editor>
@@ -2426,19 +2497,26 @@ function ConnectedCalendarList({
         items={events}
         previewCount={CONNECTED_PREVIEW_COUNT}
         getKey={(event) => event.id}
-        Item={({ item: event }) => (
-          <div className="grid gap-0.5">
-            <Link
-              href={`/app/calendar?event=${encodeURIComponent(event.id)}&date=${event.startAt.toISOString().slice(0, 10)}&view=day`}
-              className={DETAIL_LINK_CLASS}
-            >
-              {displayText(event.title)}
-            </Link>
-            <span className={DETAIL_META_CLASS}>
-              {formatDisplayDateTime(event.startAt, { timezone })} · {statusLabel(event.showAs)}
-            </span>
-          </div>
-        )}
+        Item={({ item: event }) => {
+          const date = localDateFromInstant(
+            event.startAt.toISOString(),
+            event.allDay ? (event.timezone ?? timezone) : timezone,
+          );
+          return (
+            <div className="grid gap-0.5">
+              <Link
+                href={`/app/calendar?event=${encodeURIComponent(event.id)}&date=${date}&view=day`}
+                className={DETAIL_LINK_CLASS}
+              >
+                {displayText(event.title)}
+              </Link>
+              <span className={DETAIL_META_CLASS}>
+                <RegionalDate value={event.allDay ? date : event.startAt} variant="datetime" /> ·{' '}
+                {statusLabel(event.showAs)}
+              </span>
+            </div>
+          );
+        }}
       />
     </ConnectedWorkSection>
   );
@@ -2552,7 +2630,6 @@ function ConnectedDocumentList({
 }: {
   documents: ObjectDetail['connectedWork']['documents'];
 }) {
-  const timezone = useWorkspaceTimezone();
   if (documents.length === 0) return null;
   return (
     <ConnectedWorkSection title="Documents" count={documents.length}>
@@ -2571,7 +2648,7 @@ function ConnectedDocumentList({
             </a>
             <span className={DETAIL_META_CLASS}>
               {statusLabel(document.fileKind)} · updated{' '}
-              {formatDisplayDateTime(document.updatedAt, { timezone })}
+              <RegionalDate value={document.updatedAt} variant="datetime" />
             </span>
           </div>
         )}
@@ -2581,7 +2658,6 @@ function ConnectedDocumentList({
 }
 
 function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['links'] }) {
-  const timezone = useWorkspaceTimezone();
   if (links.length === 0) return null;
   return (
     <ConnectedWorkSection title="Links" count={links.length}>
@@ -2605,7 +2681,7 @@ function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['li
             )}
             <span className={DETAIL_META_CLASS}>
               {link.provider ?? link.domain ?? 'shared link'} · updated{' '}
-              {formatDisplayDateTime(link.updatedAt, { timezone })}
+              <RegionalDate value={link.updatedAt} variant="datetime" />
             </span>
           </div>
         )}
@@ -2619,7 +2695,6 @@ function ConnectedCapturedFileList({
 }: {
   files: ObjectDetail['connectedWork']['capturedFiles'];
 }) {
-  const timezone = useWorkspaceTimezone();
   if (files.length === 0) return null;
   return (
     <ConnectedWorkSection title="Files" count={files.length}>
@@ -2634,7 +2709,7 @@ function ConnectedCapturedFileList({
             </Link>
             <span className={DETAIL_META_CLASS}>
               {file.contentType ?? 'captured file'} · updated{' '}
-              {formatDisplayDateTime(file.updatedAt, { timezone })}
+              <RegionalDate value={file.updatedAt} variant="datetime" />
             </span>
           </div>
         )}
@@ -2832,7 +2907,7 @@ function ObjectRecentChangeItem({
   onAcceptChange: (changeId: string) => void;
   onRejectChange: (changeId: string) => void;
 }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   const isSuggested = change.status === 'suggested';
   const isRejected = change.status === 'rejected';
   return (
@@ -2848,11 +2923,13 @@ function ObjectRecentChangeItem({
         </span>
       </div>
       <div className={`mt-0.5 break-words ${DETAIL_META_CLASS}`}>
-        {formatValue(change.previousValue, timezone, change.field)} →{' '}
-        {formatValue(change.newValue, timezone, change.field)}
+        {formatValue(change.previousValue, change.field, region)} →{' '}
+        {formatValue(change.newValue, change.field, region)}
       </div>
       <div className={`mt-0.5 flex items-center justify-between ${DETAIL_META_CLASS}`}>
-        <span>{formatDisplayDateTime(change.changedAt, { timezone })}</span>
+        <span>
+          <RegionalDate value={change.changedAt} variant="datetime" />
+        </span>
         {isSuggested ? (
           <div className="flex gap-2">
             <button
@@ -2933,15 +3010,24 @@ function toLocalInputValue(value: unknown, timezone: string): string {
   return d ? (presentDueDate(d, { timezone }).dateKey ?? '') : '';
 }
 
-function formatValue(v: unknown, timezone: string, field = ''): string {
-  const category = formatTaskCategoryChangeValue(field, v);
+function formatValue(value: unknown, field: string, region: RegionalFormat): string {
+  const category = formatTaskCategoryChangeValue(field, value);
   if (category !== null) return category;
-  if (v === null || v === undefined) return '∅';
-  if (typeof v === 'string') return displayText(v, { timezone });
-  if (Array.isArray(v)) return v.map((item) => formatValue(item, timezone, field)).join(', ');
-  if (v instanceof Date) return formatDisplayDateTime(v, { timezone });
-  if (typeof v === 'object') return summarizeObjectValue(v as Record<string, unknown>);
-  if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
+  if (value === null || value === undefined) return '∅';
+  if (field === 'dueAt' && (typeof value === 'string' || value instanceof Date)) {
+    const source = typeof value === 'string' ? value : parseDisplayDate(value)?.toISOString();
+    const day = source && dateOnlyDueDateKey(source);
+    return day ? formatDisplayDate(day, region) : formatDisplayDateTime(value, region);
+  }
+  if (typeof value === 'string') {
+    return field === 'plannedDate' ? formatDisplayDate(value, region) : displayText(value, region);
+  }
+  if (Array.isArray(value)) return value.map((item) => formatValue(item, field, region)).join(', ');
+  if (value instanceof Date) return formatDisplayDateTime(value, region);
+  if (typeof value === 'object') return summarizeObjectValue(value as Record<string, unknown>);
+  if (typeof value === 'number')
+    return formatDisplayNumber(value, region.locale, { maximumSignificantDigits: 21 });
+  if (typeof value === 'boolean' || typeof value === 'bigint') return String(value);
   return 'updated';
 }
 
@@ -2954,6 +3040,7 @@ function changeFieldLabel(field: string): string {
     canonicalName: 'Name',
     aliases: 'Aliases',
     dueAt: 'Due date',
+    plannedDate: 'Planned date',
     taskCategory: 'Category',
     ownerUserId: 'Owner',
     assigneeUserId: 'Assignee',

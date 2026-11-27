@@ -26,7 +26,7 @@ function supportedTimezones(): string[] {
     : [];
 }
 
-function isValidTimezone(timezone: string): boolean {
+export function isValidTimezone(timezone: string): boolean {
   if (!timezone) return false;
   try {
     Intl.DateTimeFormat(undefined, { timeZone: timezone });
@@ -42,11 +42,9 @@ export function normalizeTimezone(value: FormDataEntryValue | string | null | un
 }
 
 export function timezoneOptions(selectedTimezone: string): string[] {
-  const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const options = new Set([...COMMON_TIMEZONES, ...supportedTimezones()]);
   if (isValidTimezone(selectedTimezone)) options.add(selectedTimezone);
-  if (isValidTimezone(browserTimezone)) options.add(browserTimezone);
   return Array.from(options).sort((a, b) =>
-    a === DEFAULT_TIMEZONE ? -1 : b === DEFAULT_TIMEZONE ? 1 : a.localeCompare(b),
+    a === DEFAULT_TIMEZONE ? -1 : b === DEFAULT_TIMEZONE ? 1 : a.localeCompare(b, 'en-US'),
   );
 }

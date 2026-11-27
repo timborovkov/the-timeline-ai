@@ -670,15 +670,18 @@ async function summarizeTranscript(
 async function settleRecallForFinalizedMeeting(input: {
   db: Db;
   teamId: string;
-  meetingId: string;
+  meeting: Pick<typeof meetingsTable.$inferSelect, 'id' | 'startedAt' | 'endedAt' | 'metadata'>;
   minutes: number;
 }): Promise<void> {
   const billingScope = withTeam(input.db, input.teamId, BILLING_SYSTEM_USER_ID, {
     skipMembershipCheck: true,
   });
   await settleRecallMeetingMinutes(billingScope.billing, {
-    meetingId: input.meetingId,
+    meetingId: input.meeting.id,
     minutes: input.minutes,
+    startedAt: input.meeting.startedAt,
+    endedAt: input.meeting.endedAt,
+    metadata: input.meeting.metadata,
   });
 }
 
@@ -736,7 +739,7 @@ export async function processMeetingFinalizeJob(
     await settleRecallForFinalizedMeeting({
       db: deps.db,
       teamId,
-      meetingId,
+      meeting,
       minutes: usage?.minutes ?? 0,
     });
     return { skipped: 'already_completed', meetingId };
@@ -1036,11 +1039,10 @@ export async function processMeetingFinalizeJob(
       );
 
       try {
-        const billingScope = withTeam(deps.db, teamId, BILLING_SYSTEM_USER_ID, {
-          skipMembershipCheck: true,
-        });
-        await settleRecallMeetingMinutes(billingScope.billing, {
-          meetingId,
+        await settleRecallForFinalizedMeeting({
+          db: deps.db,
+          teamId,
+          meeting,
           minutes: finalized.minutes,
         });
       } catch (err) {

@@ -76,20 +76,25 @@ describe('ConnectAgentMemory', () => {
     expect(screen.queryByPlaceholderText(/comma/i)).toBeNull();
     expect(screen.getByRole('button', { name: 'Allow owner@timeline.dev' })).toBeTruthy();
 
+    expect(screen.queryByRole('button', { name: 'Copy webhook URL' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Create agent webhook' }));
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith('/api/team/ingest-webhooks/agent-memory', {
         method: 'POST',
       });
     });
-    expect(
-      screen.getByText('https://timeline.test/api/webhooks/ingest/whk_once_token'),
-    ).toBeTruthy();
+    const webhookUrl = 'https://timeline.test/api/webhooks/ingest/whk_once_token';
+    expect(screen.getByText(webhookUrl)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy webhook URL' }).textContent).toBe('');
     expect(
       screen.getByText(
         /curl -X POST https:\/\/timeline.test\/api\/webhooks\/ingest\/whk_once_token/,
       ),
     ).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Copy curl' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy curl' }).textContent).toBe('Copy curl');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByText(webhookUrl)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Copy webhook URL' })).toBeNull();
   });
 });

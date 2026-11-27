@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useActionState, useMemo, useSyncExternalStore } from 'react';
+import { type ReactNode, useActionState, useSyncExternalStore } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import {
@@ -10,11 +10,9 @@ import {
 } from '@/app/actions/team-exports';
 import {
   createTeamAction,
-  type DigestPreferenceState,
   inviteMemberAction,
   renameTeamAction,
   type TeamTimezoneState,
-  updateDigestPreferenceAction,
   updateInboundEmailWhitelistAction,
   updateTeamTimezoneAction,
   type CreateTeamState,
@@ -25,6 +23,7 @@ import {
 import { AllowedSendersEditor } from '@/components/allowed-senders-editor';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
+import { CopyableCodeValue } from '@/components/copyable-code-value';
 import { CopyableTextField } from '@/components/copyable-text-field';
 import { FormActionToast } from '@/components/form-action-toast';
 import { RedirectActionToast } from '@/components/redirect-action-toast';
@@ -34,7 +33,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
-import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
+import { DEFAULT_TIMEZONE } from '@/lib/timezones';
 
 function unsubscribeTimezone(): void {
   return undefined;
@@ -190,9 +189,11 @@ export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
   );
 }
 
-export function TeamTimezoneForm({ timezone }: { timezone: string }) {
-  const [state, action] = useActionState<TeamTimezoneState, FormData>(updateTeamTimezoneAction, {});
-  const options = useMemo(() => timezoneOptions(timezone), [timezone]);
+export function TeamTimezoneForm({ timezone, options }: { timezone: string; options: string[] }) {
+  const [state, action, pending] = useActionState<TeamTimezoneState, FormData>(
+    updateTeamTimezoneAction,
+    {},
+  );
   const timezoneError = state.error === 'Choose a valid timezone' ? state.error : undefined;
   return (
     <form action={action} className="space-y-3">
@@ -225,6 +226,23 @@ export function TeamTimezoneForm({ timezone }: { timezone: string }) {
           workspace-relative dates in chat.
         </p>
       </div>
+      {state.retryScheduleTeamId ? (
+        <div className="space-y-2">
+          <p role="status" className="text-xs text-fg-dim">
+            Timezone saved. The next Updates could not be queued.
+          </p>
+          <Button
+            type="submit"
+            name="intent"
+            value="retry-scheduling"
+            variant="outline"
+            size="sm"
+            disabled={pending}
+          >
+            Retry scheduling
+          </Button>
+        </div>
+      ) : null}
       <FormFeedback
         toastId="team-timezone"
         error={state.error}
@@ -353,40 +371,6 @@ export function InboundEmailWhitelistForm({
   );
 }
 
-export function DigestPreferenceForm({ enabled }: { enabled: boolean }) {
-  const [state, action] = useActionState<DigestPreferenceState, FormData>(
-    updateDigestPreferenceAction,
-    {},
-  );
-  return (
-    <form action={action} className="space-y-3">
-      <label className="flex min-h-9 items-start gap-3 text-sm">
-        <input
-          type="checkbox"
-          name="dailyDigestEnabled"
-          defaultChecked={enabled}
-          className="mt-0.5 size-4 rounded-sm border-input accent-signal transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          onChange={(event) => {
-            event.currentTarget.form?.requestSubmit();
-          }}
-        />
-        <span>
-          <span className="block font-medium">Send me a personal daily digest</span>
-          <span className="mt-0.5 block text-xs text-fg-dim">
-            Email or bot DMs configured for this workspace. Shared Slack or Telegram chats still
-            receive the team digest. Individual inbox notifications are not emailed.
-          </span>
-        </span>
-      </label>
-      <FormFeedback
-        toastId="digest-preference"
-        error={state.error}
-        success={state.ok ? 'Digest setting updated' : undefined}
-      />
-    </form>
-  );
-}
-
 export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }) {
   const [state, action] = useActionState<InviteState, FormData>(inviteMemberAction, {});
   const emailError = state.error === 'Invalid email' ? state.error : undefined;
@@ -442,10 +426,12 @@ export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }
       />
       {state.inviteUrl ? (
         <div className="space-y-2 border-t border-border pt-3 text-xs">
-          <p className="font-medium">Invite link (copy and share):</p>
-          <code className="block break-all font-mono text-[12px] text-fg-muted">
-            {state.inviteUrl}
-          </code>
+          <p className="font-medium">Invite link</p>
+          <CopyableCodeValue
+            value={state.inviteUrl}
+            copyLabel="Copy invite link"
+            valueClassName="text-fg-muted"
+          />
           {state.sendStatus === 'sent' ? (
             <p className="mt-2 text-muted-foreground">Invite email sent.</p>
           ) : null}

@@ -314,8 +314,8 @@ describe('messaging templates', () => {
       teamName: 'Acme & Co',
       kind: 'spend_cap_90',
       periodYm: '2026-08',
-      planName: 'Pay as you go',
-      detailLine: 'Metered this period: €90 of €100.',
+      planName: 'Team',
+      detailLine: 'Metered this period: $90 of $100.',
       usageUrl: 'https://timeline.test/app/usage',
       billingUrl: 'https://timeline.test/app/team?section=billing',
     });
@@ -335,6 +335,26 @@ describe('messaging templates', () => {
     });
   });
 
+  it('describes the shared Free allowance in approaching-limit emails', () => {
+    const message = renderMessage('billing_usage_alert', {
+      to: 'owner@example.test',
+      ownerName: 'Alex',
+      teamName: 'Free Workspace',
+      kind: 'free_near_limit',
+      periodYm: '2026-08',
+      planName: 'Free',
+      detailLine: 'Check Usage for the reset date.',
+      usageUrl: 'https://timeline.test/app/usage',
+      billingUrl: 'https://timeline.test/app/team?section=billing',
+    });
+
+    expect(message.textBody).toContain(
+      'AI processing and native meeting capture share this allowance.',
+    );
+    expect(message.htmlBody).toContain('review Team for more Included usage');
+    expect(message.metadata).toMatchObject({ billing_alert_kind: 'free_near_limit' });
+  });
+
   it('routes Free exhaustion alerts to billing management', () => {
     const message = renderMessage('billing_usage_alert', {
       to: 'owner@example.test',
@@ -343,7 +363,7 @@ describe('messaging templates', () => {
       kind: 'free_exhausted',
       periodYm: '2026-08',
       planName: 'Free',
-      detailLine: 'Remaining Free floor — AI €0.',
+      detailLine: 'Check Usage for the reset date.',
       usageUrl: 'https://timeline.test/app/usage',
       billingUrl: 'https://timeline.test/app/team?section=billing',
     });
@@ -351,8 +371,10 @@ describe('messaging templates', () => {
     expect(message.subject).toBe('Free Workspace: Free allowance used up');
     expect(message.textBody).toContain('Hi there,');
     expect(message.textBody).toContain(
-      'Add payment method: https://timeline.test/app/team?section=billing',
+      'Review Team: https://timeline.test/app/team?section=billing',
     );
+    expect(message.textBody).toContain('New AI processing and native meeting capture are paused.');
+    expect(message.htmlBody).toContain('Reading and export remain available.');
     expect(message.metadata).toMatchObject({ billing_alert_kind: 'free_exhausted' });
   });
 
@@ -363,7 +385,7 @@ describe('messaging templates', () => {
       teamName: 'Acme',
       kind: 'subscription_past_due',
       periodYm: '2026-08',
-      planName: 'Pay as you go',
+      planName: 'Team',
       detailLine: 'The subscription payment failed.',
       usageUrl: 'https://timeline.test/app/usage',
       billingUrl: 'https://timeline.test/app/team?section=billing',

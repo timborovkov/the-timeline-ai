@@ -16,9 +16,10 @@ import {
   OBJECT_SECTION_CLASS,
 } from '@/components/objects/object-detail-type';
 import { ShowMoreList } from '@/components/ui/show-more-list';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat, useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
+import type { RegionalFormat } from '@/lib/regional-format';
 import { statusLabel } from '@/lib/status-labels';
 import { useObjectSectionQuery } from '@/lib/use-paginated-queries';
 import { cn } from '@/lib/utils';
@@ -99,7 +100,8 @@ function ObjectSectionItems({
   );
 }
 function ObjectSectionItem({ section, item }: { section: Props['section']; item: unknown }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
+  const workspaceTimezone = useWorkspaceTimezone();
   const row = item as Record<string, unknown>;
   if (section === 'tasks') {
     return (
@@ -135,9 +137,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     const sharedObjects = factSharedObjects(row.sharedObjects);
     const occurredAt = rawText(row.occurredAt);
     const source = text(row.source);
-    const observedAt = occurredAt
-      ? formatDisplayDateTime(occurredAt, { timezone })
-      : 'unknown time';
+    const observedAt = occurredAt ? formatDisplayDateTime(occurredAt, region) : 'unknown time';
     const sourceLabel = source ? ` · ${source}` : '';
     return (
       <div className="space-y-1">
@@ -189,13 +189,14 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
         </div>
         <p className={OBJECT_ROW_META_CLASS}>
           <span className={OBJECT_MONO_META_CLASS}>
-            {formatDisplayDateTime(occurredAt, { timezone })}
+            {formatDisplayDateTime(occurredAt, region)}
           </span>{' '}
           · {statusLabel(source || 'unknown')}
         </p>
       </div>
     );
   }
+  const dueRegion = { timezone: workspaceTimezone, locale: region.locale };
   return (
     <div className="min-w-0">
       <div className="flex min-w-0 items-start justify-between gap-3">
@@ -207,8 +208,8 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
         </span>
       </div>
       <p className={cn(OBJECT_ROW_META_CLASS, 'mt-1 line-clamp-2 break-words')}>
-        {formatChangeValue(text(row.field), row.previousValue, timezone)} →{' '}
-        {formatChangeValue(text(row.field), row.newValue, timezone)}
+        {formatChangeValue(text(row.field), row.previousValue, dueRegion)} →{' '}
+        {formatChangeValue(text(row.field), row.newValue, dueRegion)}
       </p>
     </div>
   );
@@ -247,11 +248,11 @@ function changeFieldLabel(field: string): string {
   return labels[field] ?? field.replace(/([a-z])([A-Z])/g, '$1 $2');
 }
 
-function formatChangeValue(field: string, value: unknown, timezone: string): string {
+function formatChangeValue(field: string, value: unknown, dueRegion: RegionalFormat): string {
   const category = formatTaskCategoryChangeValue(field, value);
   if (category !== null) return category;
   if (field === 'dueAt') {
-    const due = presentDueDate(value as Date | string | null | undefined, { timezone });
+    const due = presentDueDate(value as Date | string | null | undefined, dueRegion);
     if (due.status === 'invalid') return due.compactText;
     return due.dateLabel ? `${due.label} · ${due.dateLabel}` : due.compactText;
   }
@@ -260,7 +261,7 @@ function formatChangeValue(field: string, value: unknown, timezone: string): str
     return (
       value
         .flatMap((item) => {
-          const formatted = formatChangeValue('', item, timezone);
+          const formatted = formatChangeValue('', item, dueRegion);
           return formatted ? [formatted] : [];
         })
         .join(', ') || 'empty'

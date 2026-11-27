@@ -8,11 +8,9 @@ import { TIMELINE_HOSTED_MCP_TOOLS } from '@/lib/agent-install-content';
 describe('agents marketing copy', () => {
   it('keeps the confirmed setup-card title and body', () => {
     expect(AGENT_SETUP_CARD.kicker).toBe('For agents');
-    expect(AGENT_SETUP_CARD.title).toBe(
-      'Give your agents the work record — and let them write back like teammates.',
-    );
+    expect(AGENT_SETUP_CARD.title).toBe('Give your agents the context to pick up work.');
     expect(AGENT_SETUP_CARD.body).toBe(
-      'They read what the team said in Slack, email, calls and docs, then add their own notes to the same cited log.',
+      'Agents can read permitted workspace context and record their progress as attributed notes.',
     );
     expect(TIMELINE_AGENT_SETUP_COMMAND).toBe(
       'Set up The Timeline - https://thetimeline.cc/llms.txt',
@@ -30,7 +28,7 @@ describe('agents marketing copy', () => {
     for (const tool of TIMELINE_HOSTED_MCP_TOOLS) {
       expect(AGENTS_HUB.readOut.toolsIntro).toContain(tool);
     }
-    expect(copy).toContain('accepted-sources meter');
+    expect(copy).toContain('attributed evidence');
     expect(copy).toContain('does not change canonical records');
     expect(copy).toContain('tli_');
     expect(copy).toContain('one-time URL');
@@ -48,10 +46,10 @@ describe('agents marketing copy', () => {
     expect(AGENTS_HUB.setupPrerequisite.mcpHref).toBe('/integrations/mcp');
   });
 
-  it('labels the Grok Bot progress note as an illustration, not a shipped product', () => {
+  it('keeps attributed staging evidence separate from customer verification', () => {
     expect(AGENTS_HUB.example.label).toBe('Example');
-    expect(AGENTS_HUB.example.title).toContain('Grok Bot');
-    expect(AGENTS_HUB.example.boundary).toContain('not a dedicated Grok Bot product');
+    expect(AGENTS_HUB.example.title).toContain('An agent');
+    expect(AGENTS_HUB.example.boundary).toContain('customer outcome still needs verification');
     expect(AGENT_SETUP_CARD.title).not.toContain('Grok');
     expect(AGENT_SETUP_CARD.body).not.toContain('Grok');
     expect(AGENTS_HUB.title).not.toContain('Grok');

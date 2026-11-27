@@ -38,11 +38,6 @@ await vi.mock(
   }),
   () => import('@/lib/notify'),
 );
-await vi.mock(
-  import.meta.resolve('@/components/workspace-timezone-context'),
-  () => ({ useWorkspaceTimezone: () => 'UTC' }),
-  () => import('@/components/workspace-timezone-context'),
-);
 
 const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');

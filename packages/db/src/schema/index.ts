@@ -57,3 +57,4 @@ export * from '#src/schema/evaluation-tracing.js';
 export * from '#src/schema/source-index-receipts.js';
 export * from '#src/schema/work-follow-through.js';
 export * from '#src/schema/board-imports.js';
+export * from '#src/schema/guest-access.js';

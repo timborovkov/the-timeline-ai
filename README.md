@@ -5,7 +5,7 @@
 <h1 align="center">The Timeline</h1>
 
 <p align="center">
-  An auto-updating work record from Slack, Telegram, email and calls, with cited answers.
+  A shared work record for teams and their AI agents.
 </p>
 
 <p align="center">
@@ -18,9 +18,10 @@
   <a href="docs/README.md">Developer docs</a>
 </p>
 
-The Timeline keeps client, deal, task and decision records up to date from Slack,
-Telegram, email and calls. Every line has its source, and suggested durable
-workspace changes wait for human approval.
+The Timeline connects selected activity from tools like Slack, Telegram, email
+and calls into a source-linked record. Ask what changed or open the work behind
+the answer. Eligible updates apply under workspace policy, and changes that
+need a decision go to Approvals.
 
 ## Features
 

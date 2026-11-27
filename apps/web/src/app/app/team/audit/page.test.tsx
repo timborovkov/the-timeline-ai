@@ -4,7 +4,6 @@ import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auditList: vi.fn(),
   auth: vi.fn(),
-  getCalendarSettings: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
@@ -26,7 +25,6 @@ await vi.mock(
   () => ({
     withTeam: () => ({
       audit: { list: fakes.auditList },
-      calendar: { getCalendarSettings: fakes.getCalendarSettings },
       requireMembership: fakes.requireMembership,
     }),
   }),
@@ -60,7 +58,6 @@ beforeEach(() => {
     active: { teamId: 'team-1', teamName: 'Acme Labs' },
   });
   fakes.requireMembership.mockResolvedValue('admin');
-  fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'America/Los_Angeles' });
   fakes.auditList.mockResolvedValue([
     {
       id: 'audit-1',
@@ -77,32 +74,33 @@ beforeEach(() => {
 });
 
 describe('TrustAuditPage', () => {
-  it('presents audit times in the team timezone with clear timezone context', async () => {
+  it('presents audit times in the selected timezone with clear timezone context', async () => {
     const html = renderToStaticMarkup(
-      <WorkspaceTimezoneProvider timezone="America/Los_Angeles">
-        {await TrustAuditPage()}
+      <WorkspaceTimezoneProvider
+        timezone="America/Los_Angeles"
+        region={{ locale: 'de-DE', timezone: 'Asia/Tokyo' }}
+      >
+        {await TrustAuditPage({})}
       </WorkspaceTimezoneProvider>,
     );
 
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(fakes.auditList).toHaveBeenCalledWith(201, 0);
-    expect(fakes.getCalendarSettings).toHaveBeenCalledOnce();
     expect(html).toContain(
-      new Intl.DateTimeFormat('en-US', {
+      new Intl.DateTimeFormat('de-DE', {
         dateStyle: 'medium',
         timeStyle: 'short',
-        timeZone: 'UTC',
-      }).format(new Date('2026-07-14T17:30:00.000Z')),
+        timeZone: 'Asia/Tokyo',
+      }).format(new Date('2026-07-15T00:30:00.000Z')),
     );
-    expect(html).toContain('America/Los_Angeles');
-    expect(html).toContain('times in America/Los_Angeles');
+    expect(html).toContain('Asia/Tokyo');
     expect(html).toContain('dateTime="2026-07-15T00:30:00.000Z"');
   });
 
   it('gives an empty audit log a named, explanatory archive state', async () => {
     fakes.auditList.mockResolvedValueOnce([]);
 
-    const html = renderToStaticMarkup(await TrustAuditPage());
+    const html = renderToStaticMarkup(await TrustAuditPage({}));
 
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(html).toContain('aria-labelledby="trust-audit-entries"');
@@ -114,7 +112,7 @@ describe('TrustAuditPage', () => {
   });
 
   it('leads with a readable audit summary while preserving event codes in technical details', async () => {
-    const html = renderToStaticMarkup(await TrustAuditPage());
+    const html = renderToStaticMarkup(await TrustAuditPage({}));
     const primaryContent = html.replace(/<details[\s\S]*?<\/details>/g, '');
 
     expect(primaryContent).toContain('Team settings changed');
@@ -163,7 +161,7 @@ describe('TrustAuditPage', () => {
       },
     ]);
 
-    const html = renderToStaticMarkup(await TrustAuditPage());
+    const html = renderToStaticMarkup(await TrustAuditPage({}));
     const primaryContent = html.replace(/<details[\s\S]*?<\/details>/g, '');
 
     expect(primaryContent).toContain('Team export download rejected');
@@ -235,7 +233,7 @@ describe('TrustAuditPage', () => {
       },
     ]);
 
-    const html = renderToStaticMarkup(await TrustAuditPage());
+    const html = renderToStaticMarkup(await TrustAuditPage({}));
 
     expect(html).toContain('Reason');
     expect(html).toContain('operation_failed');
@@ -283,7 +281,7 @@ describe('TrustAuditPage', () => {
       },
     ]);
 
-    const html = renderToStaticMarkup(await TrustAuditPage());
+    const html = renderToStaticMarkup(await TrustAuditPage({}));
 
     expect(html.match(/ada@example\.com/g)).toHaveLength(1);
     expect(html).not.toContain('<dt class="sr-only">Email</dt>');

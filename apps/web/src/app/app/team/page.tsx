@@ -16,7 +16,7 @@ import {
   PLAN_CATALOG,
 } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
-import { listTeamDigestDestinations, getDigestPreference } from '@timeline/shared/messaging';
+import { listTeamDigestDestinations } from '@timeline/shared/messaging';
 import type { TeamDigestDestination } from '@timeline/shared/messaging';
 import type { TeamWorkStyle } from '@timeline/shared/onboarding';
 import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
@@ -33,6 +33,7 @@ import {
   DigestDestinationsForm,
   type DigestDestinationOption,
 } from '@/components/digest-destinations';
+import { DisplayRegionForm } from '@/components/display-region-form';
 import { WorkStylePreference } from '@/components/onboarding/work-style-preference';
 import { PageHeader } from '@/components/page-header';
 import { SettingsSection } from '@/components/section-heading';
@@ -41,7 +42,6 @@ import { TeamDeletionForm } from '@/components/team-deletion-form';
 import {
   InboundEmailPlaceholderNotice,
   InboundEmailWhitelistForm,
-  DigestPreferenceForm,
   RenameTeamForm,
   TeamTimezoneForm,
   TeamExportPanel,
@@ -56,6 +56,7 @@ import { displayMemberLabel } from '@/lib/display-labels';
 import { displayInboundEmail, shouldWarnPlaceholderInboundEmail } from '@/lib/hub-status';
 import { paidSignupPlan } from '@/lib/signup-plan';
 import { readSignupPlanIntent } from '@/lib/signup-plan-intent';
+import { timezoneOptions } from '@/lib/timezones';
 
 export const metadata: Metadata = {
   title: 'Team settings',
@@ -63,7 +64,7 @@ export const metadata: Metadata = {
 };
 
 type InboundEmailWhitelistSettings = ComponentProps<typeof InboundEmailWhitelistForm>;
-type TeamTimezoneSettings = ComponentProps<typeof TeamTimezoneForm>;
+type TeamTimezoneSettings = Pick<ComponentProps<typeof TeamTimezoneForm>, 'timezone'>;
 
 const SETTINGS_ITEMS = [
   { value: 'general', label: 'General' },
@@ -98,7 +99,6 @@ export default async function TeamSettingsPage({
     session,
     inviteRows,
     removedRows,
-    digestPreference,
     digestDestinations,
     destinationOptions,
     timezoneSettings,
@@ -130,6 +130,11 @@ export default async function TeamSettingsPage({
           { label: 'Members', value: memberRows.length, mono: true },
         ]}
       />
+      {isAdmin && section === 'members' ? (
+        <Link href="/app/team/guests" className="text-sm underline">
+          Guest access
+        </Link>
+      ) : null}
       {
         <TeamSettingsSections
           section={section}
@@ -141,7 +146,6 @@ export default async function TeamSettingsPage({
           inviteRows={inviteRows}
           removedRows={removedRows}
           active={active}
-          digestPreference={digestPreference}
           digestDestinations={digestDestinations}
           destinationOptions={destinationOptions}
           timezoneSettings={timezoneSettings}
@@ -175,7 +179,6 @@ function TeamSettingsSections({
   inviteRows,
   removedRows,
   active,
-  digestPreference,
   digestDestinations,
   destinationOptions,
   timezoneSettings,
@@ -217,8 +220,10 @@ function TeamSettingsSections({
           <>
             <TeamIdentitySettings isAdmin={isAdmin} active={active} />
             <TeamQualitySettings />
+            <SettingsSection title="Your display preferences">
+              <DisplayRegionForm timezones={timezoneOptions('')} />
+            </SettingsSection>
             <TeamPreferencesSettings
-              digestPreference={digestPreference}
               isAdmin={isAdmin}
               digestDestinations={digestDestinations}
               destinationOptions={destinationOptions}
@@ -274,6 +279,11 @@ function TeamSettingsSections({
         {section === 'advanced' && isAdmin ? (
           <>
             <AdminShortcuts isAdmin />
+            <SettingsSection title="Record maintenance">
+              <Link href="/app/team/record-maintenance" className="text-sm text-signal underline">
+                Configure automatic changes
+              </Link>
+            </SettingsSection>
             {isOwner && <TeamDeletionForm teamId={active.teamId} teamName={active.teamName} />}
           </>
         ) : null}
@@ -346,14 +356,12 @@ function TeamQualitySettings() {
   );
 }
 function TeamPreferencesSettings({
-  digestPreference,
   isAdmin,
   digestDestinations,
   destinationOptions,
   timezoneSettings,
   workStyle,
 }: {
-  digestPreference: { enabled: boolean; hour: number; timezone: string };
   isAdmin: boolean;
   digestDestinations: TeamDigestDestination[];
   destinationOptions: DigestDestinationOption[];
@@ -365,7 +373,7 @@ function TeamPreferencesSettings({
       <SettingsSection title="How the team works">
         <WorkStylePreference initialWorkStyle={workStyle} />
       </SettingsSection>
-      <MessagingPreferencesCard enabled={digestPreference.enabled} />
+      <MessagingPreferencesCard />
       {isAdmin ? (
         <SettingsSection title="Digest destinations">
           <DigestDestinationsForm destinations={digestDestinations} options={destinationOptions} />
@@ -373,7 +381,10 @@ function TeamPreferencesSettings({
       ) : null}
       {isAdmin ? (
         <SettingsSection title="Team timezone">
-          <TeamTimezoneForm {...timezoneSettings} />
+          <TeamTimezoneForm
+            {...timezoneSettings}
+            options={timezoneOptions(timezoneSettings.timezone)}
+          />
         </SettingsSection>
       ) : null}
     </>
@@ -472,13 +483,16 @@ function TeamBillingSettings({
       comp={comp}
       showOperatorLink={showOperatorLink}
       platformFeeCents={commercial?.platformFeeCents}
+      platformFeeCurrency={commercial?.platformFeeCurrency}
     />
   );
 }
-function MessagingPreferencesCard({ enabled }: { enabled: boolean }) {
+function MessagingPreferencesCard() {
   return (
     <SettingsSection title="Messaging">
-      <DigestPreferenceForm enabled={enabled} />
+      <Link href="/app/updates" className="underline underline-offset-4">
+        Customize updates
+      </Link>
     </SettingsSection>
   );
 }
@@ -599,13 +613,8 @@ async function loadTeamSettingsPage({
     ? requestedSection
     : 'members';
 
-  const [memberRows, digestPreference, digestDestinations] = await Promise.all([
+  const [memberRows, digestDestinations] = await Promise.all([
     scope.timeline.listMembers(),
-    getDigestPreference({
-      db,
-      teamId: active.teamId,
-      userId: session.user.id,
-    }),
     listTeamDigestDestinations(db, active.teamId),
   ]);
   const teamSettingsRow = (
@@ -756,7 +765,6 @@ async function loadTeamSettingsPage({
     session,
     inviteRows,
     removedRows,
-    digestPreference,
     digestDestinations,
     destinationOptions,
     timezoneSettings,

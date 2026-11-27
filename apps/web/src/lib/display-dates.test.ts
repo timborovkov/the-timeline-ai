@@ -5,8 +5,15 @@ import {
   displayText,
   formatDisplayDate,
   formatDisplayDateTime,
+  formatDisplayTime,
   formatRelativeAge,
 } from '@/lib/display-dates';
+import {
+  formatDisplayCurrency,
+  formatDisplayNumber,
+  formatDisplayPercent,
+  resolveRegionalFormat,
+} from '@/lib/regional-format';
 const RAW_ISO_INSTANT = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/;
 
 describe('displayText', () => {
@@ -136,5 +143,54 @@ describe('formatRelativeAge', () => {
 
   it('returns the raw value when the instant is invalid', () => {
     expect(formatRelativeAge('not-a-date', { now })).toBe('not-a-date');
+  });
+});
+
+describe('regional presentation', () => {
+  it('independently resolves saved, browser, workspace, and app values', () => {
+    const preference = { locale: 'invalid_locale', timezone: 'Mars/Olympus' };
+    const browser = { locale: 'de-DE', timezone: 'America/Los_Angeles' };
+    expect(resolveRegionalFormat(preference, browser, 'Asia/Tokyo')).toEqual(browser);
+    expect(resolveRegionalFormat({ locale: 'en-US', timezone: 'Asia/Tokyo' }, browser)).toEqual({
+      locale: 'en-US',
+      timezone: 'Asia/Tokyo',
+    });
+    expect(resolveRegionalFormat(preference, {}, 'Asia/Tokyo')).toEqual({
+      locale: 'en-US',
+      timezone: 'Asia/Tokyo',
+    });
+    expect(resolveRegionalFormat(preference, {}, 'invalid')).toEqual({
+      locale: 'en-US',
+      timezone: 'Europe/Helsinki',
+    });
+  });
+
+  it('keeps date-only values in their day and shows instant dates in each zone', () => {
+    const west = { locale: 'en-US', timezone: 'America/Los_Angeles' };
+    const east = { locale: 'de-DE', timezone: 'Asia/Tokyo' };
+    const instant = '2026-07-01T00:15:00Z';
+    expect(formatDisplayDate(instant, west)).toBe('Jun 30, 2026');
+    expect(formatDisplayDate(instant, east)).toBe('01.07.2026');
+    expect(formatDisplayDate('2026-07-01', west)).toBe('Jul 1, 2026');
+    expect(formatDisplayDateTime('2026-07-01', east)).toBe('01.07.2026');
+    expect(formatDisplayDateTime('2026-07-01T00:15:00', east)).toBe('2026-07-01T00:15:00');
+  });
+
+  it('uses real offsets on both sides of a DST jump', () => {
+    const region = { locale: 'de-DE', timezone: 'America/New_York' };
+    expect(formatDisplayTime('2026-03-08T06:59:00Z', region)).toBe('01:59');
+    expect(formatDisplayTime('2026-03-08T07:00:00Z', region)).toBe('03:00');
+    expect(formatDisplayTime('2026-03-08T03:00:00-04:00', region)).toBe('03:00');
+  });
+
+  it('localizes relative time, counts, and percentages while retaining USD', () => {
+    const now = new Date('2026-07-01T00:00:00Z');
+    expect(formatRelativeAge('2026-06-30T22:00:00Z', { now, locale: 'de-DE' })).toBe(
+      'vor 2 Stunden',
+    );
+    expect(formatDisplayNumber(1234.5, 'de-DE')).toBe('1.234,5');
+    expect(formatDisplayPercent(0.25, 'de-DE')).toBe('25\u00a0%');
+    expect(formatDisplayCurrency(123450, 'USD', 'en-US')).toBe('$1,234.50');
+    expect(formatDisplayCurrency(123450, 'USD', 'de-DE')).toBe('1.234,50\u00a0$');
   });
 });

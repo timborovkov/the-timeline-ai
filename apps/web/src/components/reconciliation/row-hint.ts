@@ -1,15 +1,10 @@
-import { formatDisplayDateTime } from '@/lib/display-dates';
-
 export function reconciliationClusterRowHint(input: {
   artifactClusterKind: string;
   artifactType: string;
   clusterId: string;
   status: string;
-  timeZone: string;
-  updatedAt: Date;
 }): string {
   return joinHintLines([
-    formatDisplayDateTime(input.updatedAt, { timezone: input.timeZone }),
     `Cluster ID: ${input.clusterId}`,
     `${input.artifactClusterKind} · ${input.artifactType} · ${input.status}`,
   ]);
@@ -18,18 +13,15 @@ export function reconciliationClusterRowHint(input: {
 export function reconciliationOutputRowHint(input: {
   clusterId?: string | null;
   confidence: string;
-  createdAt: Date;
   outputId: string;
   outputKind: string;
   status: string;
   targetId?: string | null;
   targetKind: string;
-  timeZone: string;
   sourceRefs?: unknown;
   sourcePayloadRefs?: unknown;
 }): string {
   return joinHintLines([
-    formatDisplayDateTime(input.createdAt, { timezone: input.timeZone }),
     `Output ID: ${input.outputId}`,
     input.clusterId ? `Cluster ID: ${input.clusterId}` : null,
     input.targetId ? `Target ID: ${input.targetId}` : null,

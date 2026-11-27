@@ -172,6 +172,8 @@ function priceOf(value: unknown): PolarSetupPrice | null {
     priceAmount: typeof price.price_amount === 'number' ? price.price_amount : null,
     priceCurrency: typeof price.price_currency === 'string' ? price.price_currency : null,
     minimumAmount: typeof price.minimum_amount === 'number' ? price.minimum_amount : null,
+    taxBehavior: typeof price.tax_behavior === 'string' ? price.tax_behavior : null,
+    seatTiers: price.seat_tiers,
     unitAmount: typeof unit === 'string' ? unit : typeof unit === 'number' ? String(unit) : null,
   };
 }
@@ -199,6 +201,9 @@ function productOf(value: unknown): PolarSetupProduct | null {
     name: typeof row.name === 'string' ? row.name : '',
     archived: row.is_archived === true,
     metadata: metadataOf(row.metadata),
+    recurringInterval: typeof row.recurring_interval === 'string' ? row.recurring_interval : null,
+    recurringIntervalCount:
+      typeof row.recurring_interval_count === 'number' ? row.recurring_interval_count : null,
     prices,
   };
 }
@@ -232,6 +237,20 @@ function createClient(base: string, token: string, organizationId: string): Pola
     return response.body;
   }
   return {
+    async getDefaultPresentmentCurrency() {
+      const organization = asRecord(await send(`/organizations/${encodedOrg}`, 'GET'));
+      const currency = organization?.default_presentment_currency;
+      if (
+        organization?.id !== organizationId ||
+        typeof currency !== 'string' ||
+        !/^[a-z]{3}$/u.test(currency)
+      ) {
+        throw new Error(
+          'Polar did not confirm the selected organization and its default presentment currency',
+        );
+      }
+      return currency;
+    },
     async listMeters() {
       const rows = await listAll(base, token, `/meters/?organization_id=${encodedOrg}`);
       return rows.flatMap((row) => meterOf(row) ?? []);
@@ -306,8 +325,15 @@ async function main(): Promise<void> {
   );
   const token = requiredEnv('POLAR_ACCESS_TOKEN');
   const organizationId = requiredEnv('POLAR_ORGANIZATION_ID');
-  const webhookUrl = argValue('webhook-url') ?? DEFAULT_TIMELINE_POLAR_WEBHOOK_URL;
+  const explicitWebhookUrl = argValue('webhook-url');
+  if (server === 'sandbox' && !explicitWebhookUrl) {
+    throw new Error('Sandbox setup requires --webhook-url for an isolated workspace endpoint');
+  }
+  const webhookUrl = explicitWebhookUrl ?? DEFAULT_TIMELINE_POLAR_WEBHOOK_URL;
   assertTimelineWebhookUrl(webhookUrl);
+  if (server === 'sandbox' && new URL(webhookUrl).hostname === 'thetimeline.cc') {
+    throw new Error('Sandbox setup cannot use the production Timeline host');
+  }
   const result = await runPolarSetup({
     client: createClient(polarApiBaseUrl(server), token, organizationId),
     dryRun,
@@ -318,8 +344,9 @@ async function main(): Promise<void> {
     },
   });
   const creatingWebhook = result.plan.actions.some((action) => action.kind === 'create_webhook');
-  const webhookSecret =
-    result.webhookSecret ?? (creatingWebhook ? null : optionalEnv('POLAR_WEBHOOK_SECRET'));
+  const webhookSecret = dryRun
+    ? null
+    : (result.webhookSecret ?? (creatingWebhook ? null : optionalEnv('POLAR_WEBHOOK_SECRET')));
   console.log(renderPolarSetupPlan(result.plan));
   console.log(
     renderPolarSetupReport({

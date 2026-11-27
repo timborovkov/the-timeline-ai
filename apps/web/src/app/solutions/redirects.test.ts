@@ -8,7 +8,7 @@ describe('legacy solution redirects', () => {
     const source = readFileSync(new URL('./[slug]/page.tsx', import.meta.url), 'utf8');
 
     expect(source).toContain("'weekly-project-updates': USE_CASE_ROUTES.teamDailyLog");
-    expect(source).toContain("'crm-context-from-team-activity': USE_CASE_ROUTES.crm");
+    expect(source).toContain("'crm-context-from-team-activity': USE_CASE_ROUTES.customerContext");
     expect(source).toContain('permanentRedirect');
   });
 });

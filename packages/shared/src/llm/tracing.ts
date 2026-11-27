@@ -42,7 +42,10 @@ export const generateText = tracedAi.generateText;
 // AI SDK output replacement is stable enough for extraction.
 // eslint-disable-next-line @typescript-eslint/no-deprecated
 export const generateObject = tracedAi.generateObject;
-export const streamText = tracedAi.streamText;
+// The disabled LangSmith wrapper still installs an abort handler against a
+// non-run sentinel. Keep cancellation and settlement on the SDK path when off.
+export const streamText: typeof ai.streamText = (...args) =>
+  getEnv().LANGSMITH_TRACING ? tracedAi.streamText(...args) : ai.streamText(...args);
 
 function langSmithConfig({ name, model, metadata, tags }: LangSmithRunOptions): LangSmithConfig {
   const env = getEnv();

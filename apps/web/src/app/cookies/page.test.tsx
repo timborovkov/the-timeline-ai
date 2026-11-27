@@ -38,10 +38,14 @@ describe('Cookies and similar technologies page', () => {
     expect(html).toContain('authjs.csrf-token');
     expect(html).toContain('authjs.pkce.code_verifier');
     expect(html).toContain('15-minute');
+    expect(html).toContain('timeline.github-login-link');
     expect(html).toContain('pending_invite');
     expect(html).toContain('tl_pricing_plan_intent');
     expect(html).toContain('tl_active_team');
     expect(html).toContain('up to 30 days');
+    expect(html).toContain('timeline-display-guest-locale-&lt;hash&gt;');
+    expect(html).toContain('timeline-display-timezone-&lt;hash&gt;');
+    expect(html).toContain('for this account in this browser');
     expect(html).toContain('timeline_sidebar_expanded');
     expect(html).toContain('timeline:floating-agent-chat:&lt;team&gt;:session');
     expect(html).toContain('no more than seven days');

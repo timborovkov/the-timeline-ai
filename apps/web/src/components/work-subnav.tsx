@@ -12,7 +12,7 @@ const WORK_LINKS = [
   { label: 'Tasks', href: '/app/tasks' },
   { label: 'Boards', href: '/app/boards' },
   { label: 'Calendar', href: '/app/calendar' },
-  { label: 'Digests', href: '/app/digests' },
+  { label: 'Updates', href: '/app/updates' },
   { label: 'Approvals', href: '/app/approvals' },
 ] as const;
 
@@ -25,6 +25,7 @@ export function WorkSubnav({
   className?: string;
   spacing?: 'flush' | 'comfortable';
 }) {
+  const activePath = current === '/app/digests' ? '/app/updates' : current;
   return (
     <div
       data-slot="collection-tabs"
@@ -35,17 +36,17 @@ export function WorkSubnav({
       )}
     >
       <ScrollableNav
-        activeKey={current}
+        activeKey={activePath}
         label="Work"
         cue="Swipe or scroll for more work views."
         className={cn('border-b border-border', className)}
       >
         {WORK_LINKS.map((item) => {
           const active = item.href.includes('?')
-            ? current === item.href
+            ? activePath === item.href
             : item.href === '/app/work'
-              ? current === item.href
-              : current === item.href || current.startsWith(`${item.href}/`);
+              ? activePath === item.href
+              : activePath === item.href || activePath.startsWith(`${item.href}/`);
           return (
             <Link
               key={item.href}
@@ -69,7 +70,10 @@ export function WorkSubnav({
 export function WorkNavigation() {
   const pathname = usePathname();
   if (!pathname) return null;
-  if (!WORK_LINKS.some(({ href }) => pathname === href || pathname.startsWith(`${href}/`)))
+  if (
+    pathname !== '/app/digests' &&
+    !WORK_LINKS.some(({ href }) => pathname === href || pathname.startsWith(`${href}/`))
+  )
     return null;
   return (
     <div className="shrink-0 border-b border-border bg-bg px-4 md:px-8" data-slot="work-navigation">

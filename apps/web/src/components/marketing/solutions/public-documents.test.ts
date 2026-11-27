@@ -33,7 +33,7 @@ describe('solution public documents', () => {
         title: solution.seoTitle,
         description: solution.seoDescription,
         indexability: 'index',
-        dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
+        dates: { modified: '2026-11-24', reviewed: '2026-11-24' },
         capability: { kind: 'current-product' },
         sitemap: { changeFrequency: 'monthly', priority: 0.8 },
       });

@@ -7,11 +7,12 @@ import { SectionHeading } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import { formatDisplayTime } from '@/lib/display-dates';
 import { useJobDashboardQuery } from '@/lib/use-paginated-queries';
 
 export function JobDashboard() {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   const query = useJobDashboardQuery();
   const retryDashboard = () => {
     void query.refetch();
@@ -44,7 +45,7 @@ export function JobDashboard() {
         <p role="status" className="text-xs text-fg-dim">
           Updated{' '}
           <time dateTime={query.data.updatedAt} className="font-mono tabular-nums">
-            {new Date(query.data.updatedAt).toLocaleTimeString('en-GB', { timeZone: timezone })}
+            {formatDisplayTime(query.data.updatedAt, region)}
           </time>
         </p>
       ) : null}

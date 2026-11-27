@@ -54,7 +54,7 @@ test('saving the email whitelist clears loading and preserves the success toast'
     await expect(page.getByText('Saving changes…', { exact: true })).not.toBeVisible();
     await expect(form.getByRole('button', { name: 'Save email settings' })).toBeEnabled();
     await page.reload();
-    await expect(page.getByText('toast-feedback@example.test')).toBeVisible();
+    await expect(page.getByText('toast-feedback@example.test', { exact: true })).toBeVisible();
     await expect(page.getByText('Saving changes…', { exact: true })).not.toBeVisible();
   } finally {
     await sql`UPDATE teams SET inbound_sender_whitelist = ${JSON.stringify(original.inbound_sender_whitelist)}::jsonb,

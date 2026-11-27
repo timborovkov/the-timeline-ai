@@ -28,6 +28,7 @@
     "check:web-bundle": "bun scripts/check-web-bundle-hygiene.ts",
     "check:public-origin": "bun --cwd apps/web --no-env-file --conditions=development scripts/check-public-origin.ts",
     "e2e": "bun scripts/run-e2e-strict.ts",
+    "e2e:precompiled": "bun scripts/run-e2e-strict.ts --precompile-fixtures",
     "e2e:ui": "bun scripts/run-e2e-command.ts bun x --bun --no-install playwright test --ui",
     "e2e:prod-smoke": "bun scripts/run-e2e-prod-smoke.ts",
     "ops:restore-drill": "bun --no-env-file --conditions=development scripts/restore-drill.ts",
@@ -107,24 +108,24 @@
     }
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "3.1165.0",
+    "@aws-sdk/client-s3": "3.1171.0",
     "@happy-dom/global-registrator": "21.0.4",
-    "@playwright/test": "^1.65.0",
+    "@playwright/test": "^1.65.1",
     "@sentry/cli": "3.8.2",
     "@testing-library/react": "^16.3.3",
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
     "@types/bun": "1.4.5",
     "@typescript/native": "npm:typescript@7.0.2",
-    "bullmq": "6.7.3",
+    "bullmq": "6.7.7",
     "drizzle-orm": "^0.45.4",
-    "eslint": "^10.14.0",
+    "eslint": "^10.15.0",
     "eslint-config-prettier": "^10.1.8",
-    "knip": "^6.45.0",
-    "react-doctor": "^0.9.22",
-    "turbo": "^2.11.9",
+    "knip": "^6.45.1",
+    "react-doctor": "^0.9.23",
+    "turbo": "^2.11.12",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "typescript-eslint": "^8.72.2"
+    "typescript-eslint": "^8.73.0"
   },
   "engines": {
     "bun": ">=1.4.6"

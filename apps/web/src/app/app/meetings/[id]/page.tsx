@@ -21,7 +21,10 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMeetingLabel, displaySourceLabel } from '@/lib/display-labels';
-import { formatMeetingOffset, formatTranscriptExport } from '@/lib/meeting-transcript-export';
+import {
+  formatMeetingOffset,
+  type MeetingTranscriptExportInput,
+} from '@/lib/meeting-transcript-export';
 import { statusLabel } from '@/lib/status-labels';
 
 export const metadata: Metadata = {
@@ -47,7 +50,7 @@ function renderMeetingHeaderActions({
   meetingUrl: string;
   initialPinned: boolean;
   title: string;
-  transcriptExport: string;
+  transcriptExport: MeetingTranscriptExportInput;
   cancellable: boolean;
 }) {
   return (
@@ -64,7 +67,7 @@ function renderMeetingHeaderActions({
         </a>
       </Button>
       <PinButton target={{ kind: 'meeting', key: meetingId }} initialPinned={initialPinned} />
-      <MeetingExportButtons title={title} transcriptText={transcriptExport} />
+      <MeetingExportButtons transcript={transcriptExport} />
       {cancellable ? <CancelMeetingButton meetingId={meetingId} /> : null}
     </ItemActionGroup>
   );
@@ -185,15 +188,15 @@ export default async function MeetingDetailPage({ params }: Props) {
   const originalId = meeting.metadata.recovery_of_meeting_id;
   const cancellable = ['pending', 'joining', 'active'].includes(meeting.status);
   const title = displayMeetingLabel(meeting);
-  const transcriptExport = formatTranscriptExport({
+  const transcriptExport: MeetingTranscriptExportInput = {
     title,
     platform: meeting.platform,
     status: meeting.status,
     createdAt: meeting.createdAt,
     meetingUrl: meeting.meetingUrl,
     summary,
-    chunks,
-  });
+    chunks: chunks.map(({ speaker, text, startMs }) => ({ speaker, text, startMs })),
+  };
   const headerActions = renderMeetingHeaderActions({
     meetingId: meeting.id,
     meetingUrl: meeting.meetingUrl,

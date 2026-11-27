@@ -31,10 +31,10 @@ export default async function SavedViewsPage() {
       </Link>
       <PageHeader
         title="Saved views"
-        subtitle="Open saved filters and choose which new matches appear in your daily digest."
+        subtitle="Open saved filters and choose which new matches appear in your scheduled updates."
         trailing={
           <Button asChild size="sm" variant="outline">
-            <Link href="/app/team?tab=general">Digest settings</Link>
+            <Link href="/app/updates">Customize updates</Link>
           </Button>
         }
       />

@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-test('public pricing page shows Free and PAYG plans', async ({ page }) => {
+test('public pricing page shows Free, Team, and Enterprise', async ({ page }) => {
   await page.goto('/pricing');
   await expect(page.getByRole('heading', { level: 1, name: /Start free/i })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Free', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Pay as you go' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Enterprise' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Team' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Public navigation' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Pricing' }).first()).toHaveAttribute(
@@ -13,34 +13,32 @@ test('public pricing page shows Free and PAYG plans', async ({ page }) => {
   );
 });
 
-test('PAYG intent survives navigation to signup without starting a purchase', async ({ page }) => {
+test('Team intent survives navigation to signup without starting a purchase', async ({ page }) => {
   await page.goto('/pricing');
   await page
-    .locator('[data-pricing-plan="payg"] a[data-public-analytics-cta="choose_payg"]')
+    .locator('[data-pricing-plan="team"] a[data-public-analytics-cta="choose_team"]')
     .click();
-  await expect(page).toHaveURL(/\/sign-up\?plan=payg/);
+  await expect(page).toHaveURL(/\/sign-up\?plan=team/);
   await expect(page.locator('input[name="callbackUrl"]').first()).toHaveValue(
-    '/app/team?section=billing&plan=payg#change-plan',
+    '/app/team?section=billing&plan=team#change-plan',
   );
 });
 
-test('mobile pricing explains limits and links billing help', async ({ page }) => {
+test('mobile pricing explains limits and links billing help', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/pricing');
   await expect(
     page.getByRole('link', { name: 'How billing, limits and cancellation work' }),
   ).toBeVisible();
-  await page.getByText('Infrastructure limits', { exact: true }).click();
-  await expect(page.getByText('Inbound emails / month', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
   await expect(
-    page.locator('[data-pricing-plan="payg"] a[data-public-analytics-cta="choose_payg"]'),
+    page.locator('[data-pricing-plan="team"] a[data-public-analytics-cta="choose_team"]'),
   ).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: '/workspace/audit-evidence/pricing-mobile.png', fullPage: true });
-  await page.screenshot({ path: '/workspace/audit-evidence/pricing-mobile-viewport.png' });
+  await page.screenshot({ path: testInfo.outputPath('pricing-mobile.png'), fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('pricing-mobile-viewport.png') });
 });
 
 test('public and authentication responses protect framing and publish security contact', async ({
@@ -57,7 +55,7 @@ test('public and authentication responses protect framing and publish security c
     const response = await request.get(path);
     expect(response.ok()).toBe(true);
     expect(response.headers()['x-frame-options']).toBe('DENY');
-    expect(response.headers()['referrer-policy']).toBe('no-referrer');
+    expect(response.headers()['referrer-policy']).toBe('strict-origin');
     expect(response.headers()['cache-control']).toContain('no-store');
     expect(response.headers()['x-robots-tag']).toBe('noindex, nofollow');
   }
@@ -73,11 +71,11 @@ test('public and authentication responses protect framing and publish security c
 
 test('pricing text and primary-action tokens meet normal-text contrast in both themes', async ({
   page,
-}) => {
+}, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/pricing');
   await expect(
-    page.locator('[data-pricing-plan="payg"] a[data-public-analytics-cta="choose_payg"]'),
+    page.locator('[data-pricing-plan="team"] a[data-public-analytics-cta="choose_team"]'),
   ).toBeVisible();
   for (const dark of [false, true]) {
     const ratios = await page.evaluate((dark) => {
@@ -110,7 +108,7 @@ test('pricing text and primary-action tokens meet normal-text contrast in both t
     }, dark);
     for (const ratio of ratios) expect(ratio).toBeGreaterThanOrEqual(4.5);
     await page.screenshot({
-      path: `/workspace/audit-evidence/pricing-desktop-${dark ? 'dark' : 'light'}.png`,
+      path: testInfo.outputPath(`pricing-desktop-${dark ? 'dark' : 'light'}.png`),
     });
   }
 });

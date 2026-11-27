@@ -3,6 +3,11 @@
 import { Download, Printer } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import {
+  formatTranscriptExport,
+  type MeetingTranscriptExportInput,
+} from '@/lib/meeting-transcript-export';
 
 function filenameSafe(input: string): string {
   const normalized = input
@@ -12,19 +17,17 @@ function filenameSafe(input: string): string {
   return normalized || 'meeting-transcript';
 }
 
-export function MeetingExportButtons({
-  title,
-  transcriptText,
-}: {
-  title: string;
-  transcriptText: string;
-}) {
+export function MeetingExportButtons({ transcript }: { transcript: MeetingTranscriptExportInput }) {
+  const region = useRegionalFormat();
+
   function downloadTranscript() {
-    const blob = new Blob([transcriptText], { type: 'text/markdown;charset=utf-8' });
+    const blob = new Blob([formatTranscriptExport(transcript, region)], {
+      type: 'text/markdown;charset=utf-8',
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${filenameSafe(title)}.md`;
+    a.download = `${filenameSafe(transcript.title)}.md`;
     document.body.append(a);
     a.click();
     a.remove();

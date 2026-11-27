@@ -35,7 +35,7 @@ describe('agents hub', () => {
       'timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember',
     );
     expect(html).toContain('capture is a separate consent checkbox, on by default');
-    expect(html).toContain('accepted-sources meter');
+    expect(html).toContain('attributed evidence');
     expect(html).toContain('plugins/timeline');
     expect(html).toContain('POST /api/webhooks/ingest');
     expect(html).toContain(`href="${AGENTS_HUB.installGuide.href}"`);

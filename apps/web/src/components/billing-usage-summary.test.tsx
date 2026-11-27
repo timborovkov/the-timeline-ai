@@ -141,15 +141,12 @@ it('formats sub-gigabyte storage from the same live bytes as infrastructure limi
       ]}
     />,
   );
-  expect(html).toContain('Used: 20 MB');
-  expect(html).toContain('Included: 100 MB');
   expect(html).toContain('20 MB of 100 MB');
-  expect(html).toMatch(/style="width:20%"/);
-  expect(html).not.toContain('Used: 0 GB');
+  expect(html).not.toContain('Included: 100 MB');
   expect(html).not.toContain('0.02 GB');
 });
 
-it('fills the storage allowance bar when the 100 MB floor is used up', () => {
+it('reports full storage as a capacity limit without drawing a second allowance bar', () => {
   const html = renderToStaticMarkup(
     <BillingUsageSummary
       planId="free"
@@ -159,11 +156,11 @@ it('fills the storage allowance bar when the 100 MB floor is used up', () => {
       ]}
     />,
   );
-  expect(html).toContain('Used: 100 MB');
-  expect(html).toMatch(/style="width:100%"/);
+  expect(html).toContain('100 MB of 100 MB');
+  expect(html).not.toContain('style="width:100%"');
 });
 
-it('uses live storage and retains accrued paid charges in allowance cards', () => {
+it('uses live storage and retains recorded paid charges in the breakdown', () => {
   const html = renderToStaticMarkup(
     <BillingUsageSummary
       layout="cards"
@@ -175,11 +172,48 @@ it('uses live storage and retains accrued paid charges in allowance cards', () =
     />,
   );
   expect(html).toContain('20 MB');
-  expect(html).toContain('80 MB remaining');
   expect(html).toContain('Meter charges:');
   expect(html).toContain('>€5</span>');
-  expect(html).toContain('Allowance used up');
+  expect(html).not.toContain('Allowance used up');
 });
+
+it('uses recorded USD amounts or omits them when the calendar totals are unavailable', () => {
+  const meters = {
+    ai: { nativeUnits: 1000, customerChargeCents: 1000, capEligibleChargeCents: 500 },
+  };
+  const recordedCharges = {
+    currency: 'USD',
+    invoiceCentsByMeter: { ai: 400 },
+    usageCents: 1000,
+    creditAppliedCents: 600,
+    usageAfterCreditCents: 400,
+    extraMemberCents: 0,
+    totalCents: 400,
+  } as const;
+  const known = renderToStaticMarkup(
+    <BillingUsageSummary
+      layout="cards"
+      planId="free"
+      meters={meters}
+      capacityUsage={[]}
+      recordedCharges={recordedCharges}
+    />,
+  );
+  expect(known).toContain('>$4</span>');
+  expect(known).not.toContain('>€5</span>');
+  const unavailable = renderToStaticMarkup(
+    <BillingUsageSummary
+      layout="cards"
+      planId="free"
+      meters={meters}
+      capacityUsage={[]}
+      recordedCharges={null}
+    />,
+  );
+  expect(unavailable).toContain('data-billing-meter="ai"');
+  expect(unavailable).not.toContain('Meter charges:');
+});
+
 it('does not invent native allowances or bill tracked comped usage in cards', () => {
   const html = renderToStaticMarkup(
     <BillingUsageSummary

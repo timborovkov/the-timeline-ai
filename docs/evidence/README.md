@@ -7,6 +7,7 @@ These records retain unique observations or decisions, not current instructions.
 - [Marketplace verification observations](marketplace-verification-2026.md)
 - [Platform retention decision, 3 November 2026](platform-retention-decision-2026-11-03.md)
 - [Polar team identity: dated sandbox evidence](polar-team-identity-2026-10.md)
+- [Polar Team quotes and signing observations, 24 November 2026](polar-team-quotes-2026-11-24.md)
 - [PostHog rollout evidence](posthog-rollout-evidence-2026-08-26.md)
 - [Provider privacy research and dated observations](provider-privacy-research.md)
 - [Railway capacity observations](railway-capacity-2026-11.md)

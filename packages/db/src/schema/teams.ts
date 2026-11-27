@@ -40,6 +40,8 @@ export const teamInviteSendStatus = pgEnum('team_invite_send_status', [
 export interface TeamLifecycleWork {
   disabledDateUnknown?: boolean;
   pendingCheckoutIds?: string[];
+  /** Exact paid subscription previously applied by a verified Polar event. */
+  appliedPolarSubscriptionId?: string;
   deletionActorUserId?: string;
   billingPending?: boolean;
   botsPending?: boolean;
@@ -65,6 +67,20 @@ export interface TeamLifecycleWork {
 
 export const teams = pgTable('teams', {
   id: uuid('id').defaultRandom().primaryKey(),
+  recordMaintenance: jsonb('record_maintenance')
+    .$type<{
+      revision: string;
+      reviewManualValues: boolean;
+      approveRemovals: boolean;
+      approveMerges: boolean;
+    }>()
+    .notNull()
+    .default({
+      revision: '0',
+      reviewManualValues: false,
+      approveRemovals: false,
+      approveMerges: false,
+    }),
   agentReporting: jsonb('agent_reporting')
     .$type<AgentReportingPreference>()
     .notNull()

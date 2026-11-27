@@ -1,6 +1,8 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 // Test environment: happy-dom
 
 interface ObjectSectionQueryData {
@@ -284,6 +286,35 @@ describe('ObjectSectionFeed', () => {
     expect(html).toContain('1 merged object');
     expect(html).not.toContain('merged_entity_ids');
     expect(html).not.toContain('{&quot;');
+  });
+
+  it('localizes a due-date change without using the viewer time zone to pick its day', () => {
+    fakes.query.data = {
+      pages: [
+        {
+          items: [
+            {
+              id: 'change-1',
+              field: 'dueAt',
+              previousValue: null,
+              newValue: '2026-12-01T00:15:00.000Z',
+              actorKind: 'user',
+              status: 'applied',
+            },
+          ],
+        },
+      ],
+    };
+    const html = renderToStaticMarkup(
+      <WorkspaceTimezoneProvider
+        timezone="Europe/Helsinki"
+        region={{ locale: 'de-DE', timezone: 'America/Los_Angeles' }}
+      >
+        <ObjectSectionFeed objectId="object-1" section="changes" title="Changes" />
+      </WorkspaceTimezoneProvider>,
+    );
+    expect(html).toContain('01.12.2026');
+    expect(html).not.toContain('30.11.2026');
   });
 
   it('renders task category snapshots as readable change labels', () => {

@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { runSentryServerAction } from '@/lib/sentry-action';
 
 async function calendarScope() {
   const session = await auth();
@@ -16,68 +17,86 @@ async function calendarScope() {
 }
 
 export async function listGoogleCalendarChoices() {
-  try {
-    const scope = await calendarScope();
-    if (scope) return { ok: true, choices: await scope.google.listChoices() };
-  } catch {
-    return { ok: false, error: 'Couldn’t load your calendars. Try reconnecting Google Calendar.' };
-  }
-  return { ok: false, error: 'Choose a workspace and sign in again.' };
+  return runSentryServerAction('list_google_calendar_choices', async () => {
+    try {
+      const scope = await calendarScope();
+      if (scope) return { ok: true, choices: await scope.google.listChoices() };
+    } catch {
+      return {
+        ok: false,
+        error: 'Couldn’t load your calendars. Try reconnecting Google Calendar.',
+      };
+    }
+    return { ok: false, error: 'Choose a workspace and sign in again.' };
+  });
 }
 
 export async function selectGoogleCalendar(calendarId: string) {
-  if (!z.string().min(1).max(2048).safeParse(calendarId).success) {
-    return { ok: false, error: 'Select a calendar.' };
-  }
-  try {
-    const scope = await calendarScope();
-    if (scope && (await scope.google.selectCalendar(calendarId))) {
-      revalidatePath('/app/calendar');
-      return { ok: true };
+  return runSentryServerAction('select_google_calendar', async () => {
+    if (!z.string().min(1).max(2048).safeParse(calendarId).success) {
+      return { ok: false, error: 'Select a calendar.' };
     }
-  } catch {
-    return { ok: false, error: 'Couldn’t select this calendar. Try reconnecting Google Calendar.' };
-  }
-  return { ok: false, error: 'This calendar is no longer available.' };
+    try {
+      const scope = await calendarScope();
+      if (scope && (await scope.google.selectCalendar(calendarId))) {
+        revalidatePath('/app/calendar');
+        return { ok: true };
+      }
+    } catch {
+      return {
+        ok: false,
+        error: 'Couldn’t select this calendar. Try reconnecting Google Calendar.',
+      };
+    }
+    return { ok: false, error: 'This calendar is no longer available.' };
+  });
 }
 
 export async function disconnectGoogleCalendar() {
-  const scope = await calendarScope();
-  if (!scope) return { ok: false, error: 'Choose a workspace and sign in again.' };
-  await scope.google.disconnect();
-  revalidatePath('/app/calendar');
-  return { ok: true };
+  return runSentryServerAction('disconnect_google_calendar', async () => {
+    const scope = await calendarScope();
+    if (!scope) return { ok: false, error: 'Choose a workspace and sign in again.' };
+    await scope.google.disconnect();
+    revalidatePath('/app/calendar');
+    return { ok: true };
+  });
 }
 
 export async function getEventReminder(eventId: string) {
-  if (!z.uuid().safeParse(eventId).success) return null;
-  const scope = await calendarScope();
-  return scope?.reminders.getPreference(eventId) ?? null;
+  return runSentryServerAction('get_event_reminder', async () => {
+    if (!z.uuid().safeParse(eventId).success) return null;
+    const scope = await calendarScope();
+    return scope?.reminders.getPreference(eventId) ?? null;
+  });
 }
 
 export async function changeEventReminder(eventId: string, leadMinutes: number | null) {
-  if (
-    !z.uuid().safeParse(eventId).success ||
-    !z.number().int().min(1).max(1440).nullable().safeParse(leadMinutes).success
-  ) {
-    return { ok: false, error: 'Choose a valid reminder time.' };
-  }
-  const scope = await calendarScope();
-  return (await scope?.reminders.setPreference(eventId, leadMinutes))
-    ? { ok: true }
-    : { ok: false, error: 'Reminders are unavailable for this event.' };
+  return runSentryServerAction('change_event_reminder', async () => {
+    if (
+      !z.uuid().safeParse(eventId).success ||
+      !z.number().int().min(1).max(1440).nullable().safeParse(leadMinutes).success
+    ) {
+      return { ok: false, error: 'Choose a valid reminder time.' };
+    }
+    const scope = await calendarScope();
+    return (await scope?.reminders.setPreference(eventId, leadMinutes))
+      ? { ok: true }
+      : { ok: false, error: 'Reminders are unavailable for this event.' };
+  });
 }
 
 export async function changeEventReminderBlock(eventId: string, blocked: boolean, series: boolean) {
-  if (
-    !z.uuid().safeParse(eventId).success ||
-    typeof blocked !== 'boolean' ||
-    typeof series !== 'boolean'
-  ) {
-    return { ok: false, error: 'Choose a valid reminder setting.' };
-  }
-  const scope = await calendarScope();
-  return (await scope?.reminders.setBlock(eventId, blocked, series))
-    ? { ok: true }
-    : { ok: false, error: 'Only the event organizer can change this setting.' };
+  return runSentryServerAction('change_event_reminder_block', async () => {
+    if (
+      !z.uuid().safeParse(eventId).success ||
+      typeof blocked !== 'boolean' ||
+      typeof series !== 'boolean'
+    ) {
+      return { ok: false, error: 'Choose a valid reminder setting.' };
+    }
+    const scope = await calendarScope();
+    return (await scope?.reminders.setBlock(eventId, blocked, series))
+      ? { ok: true }
+      : { ok: false, error: 'Only the event organizer can change this setting.' };
+  });
 }

@@ -45,6 +45,8 @@ export const objectChanges = pgTable(
       onDelete: 'set null',
     }),
     note: text('note'),
+    approvalItemId: uuid('approval_item_id'),
+    undoesChangeId: uuid('undoes_change_id'),
     changedAt: timestamp('changed_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

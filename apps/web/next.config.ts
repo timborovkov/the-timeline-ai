@@ -1,11 +1,9 @@
 import { join } from 'node:path';
 
 import { withSentryConfig } from '@sentry/nextjs/config';
-
 import type { NextConfig } from 'next';
 
 import { baseContentSecurityPolicy } from './src/lib/content-security-policy';
-
 import {
   sensitiveLinkHeaders,
   sensitiveLinkHeaderSources,
@@ -13,9 +11,16 @@ import {
 } from './src/lib/sensitive-links';
 
 const workspaceRoot = join(__dirname, '../..');
+const precompiledFixtures = process.env.E2E_PRECOMPILED === '1';
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
+  ...(precompiledFixtures ? { distDir: '.next-e2e' } : { output: 'standalone' }),
+  redirects() {
+    return Promise.resolve([
+      { source: '/use-cases/work-record', destination: '/how-it-works', permanent: true },
+      { source: '/use-cases/crm', destination: '/use-cases/customer-context', permanent: true },
+    ]);
+  },
   images: {
     localPatterns: [
       // Public screenshot revisions keep the optimized cache coherent after recaptures.
@@ -27,11 +32,17 @@ const nextConfig: NextConfig = {
   // This trades cold-route latency for a lower idle footprint on Railway.
   experimental: {
     preloadEntriesOnStart: false,
+    ...(precompiledFixtures ? { allowDevelopmentBuild: true } : {}),
   },
   // Next 16 logs Server Function arguments by default, including auth form data.
   logging: {
     serverFunctions: false,
-    incomingRequests: { ignore: [sensitiveLinkRequestLogPattern] },
+    incomingRequests: {
+      ignore: [
+        sensitiveLinkRequestLogPattern,
+        /^(?:https?:\/\/[^/]+)?\/app\/team\/guests(?:[/?]|$)/i,
+      ],
+    },
   },
   outputFileTracingRoot: workspaceRoot,
   outputFileTracingIncludes: {
@@ -68,7 +79,18 @@ const nextConfig: NextConfig = {
   // startup migrations are handled by apps/web/start.mjs outside Next's
   // instrumentation bundle.
   serverExternalPackages: ['bullmq', 'drizzle-orm', 'ioredis', 'postgres'],
-  webpack(config, { isServer }) {
+  webpack(
+    config: { externals: Record<string, string>[]; resolve: { alias: Record<string, string> } },
+    { dev, isServer },
+  ) {
+    if (precompiledFixtures && !dev && !isServer) {
+      // Next 16.4.6 loads the hot reloader during Flight navigation even under next start.
+      // Its late read of document.currentScript fails. A precompiled client has no pending updates.
+      config.resolve.alias['../../dev/hot-reloader/app/hot-reloader-app$'] = join(
+        __dirname,
+        'scripts/e2e-precompiled-hmr.mjs',
+      );
+    }
     if (isServer) {
       config.externals.push({
         bullmq: 'commonjs bullmq',

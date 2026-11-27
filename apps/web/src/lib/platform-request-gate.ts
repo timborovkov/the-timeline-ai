@@ -11,13 +11,14 @@ import type { NextRequest } from 'next/server';
 import type { Session } from 'next-auth';
 
 import { ACTIVE_TEAM_COOKIE, parseActiveTeamCookie } from '@/lib/active-team-cookie';
+import { ACCOUNT_SETTINGS_PATH } from '@/lib/auth-redirect';
 import { db } from '@/lib/db';
 
 const PERSONAL_PATHS =
   /\/(?:oauth|auth|mcp-keys|ingest-webhooks|calendar-subscription|integrations|connections|mcp-servers|mcp-share|connect-agent|agent-provisioning|telegram|slack|legal|billing)(?:\/|$)/;
 
 export function isPersonalAccountPath(path: string): boolean {
-  return PERSONAL_PATHS.test(path);
+  return path === ACCOUNT_SETTINGS_PATH || PERSONAL_PATHS.test(path);
 }
 export async function platformRequestGate(
   request: NextRequest,
@@ -43,7 +44,7 @@ export async function platformRequestGate(
       .where(eq(users.id, actor.userId));
     if (
       user?.suspendedAt &&
-      (path.startsWith('/app') || path.startsWith('/api/')) &&
+      (path.startsWith('/app') || path.startsWith('/api/') || path === ACCOUNT_SETTINGS_PATH) &&
       !path.startsWith('/api/auth/')
     )
       return new Response('Account suspended', { status: 403 });

@@ -244,8 +244,8 @@ function ApprovalsPreview() {
     <AppPreview phase="approve">
       <h1 className="text-2xl font-semibold tracking-tight">Approvals</h1>
       <p className="mt-2 text-sm leading-6 text-fg-muted">
-        Nothing becomes a lasting record until you accept it. Rejecting removes the suggestion; the
-        source stays in your event history either way.
+        Eligible changes apply automatically under workspace policy. Review any pending changes
+        here. Rejecting a suggestion keeps its source in your event history.
       </p>
       <p className="mt-4 text-xs text-fg-dim">Approvals · from this capture</p>
       <ul className="mt-2 border-t border-border">

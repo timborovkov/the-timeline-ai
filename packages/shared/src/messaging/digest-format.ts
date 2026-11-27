@@ -236,13 +236,14 @@ export function formatDigestObjectType(type: string): string {
 }
 
 export function digestCalendarHref(
-  event: Pick<DailyDigestCalendarEvent, 'id' | 'startAt'>,
+  event: Pick<DailyDigestCalendarEvent, 'id' | 'startAt' | 'allDay' | 'eventTimezone'>,
   timezone?: string,
 ): string {
   const params = new URLSearchParams();
   params.set('view', 'day');
+  const calendarTimezone = event.allDay === true ? (event.eventTimezone ?? timezone) : timezone;
   try {
-    params.set('date', localDateFromInstant(event.startAt, timezone ?? 'UTC'));
+    params.set('date', localDateFromInstant(event.startAt, calendarTimezone ?? 'UTC'));
   } catch {
     const fallback = event.startAt.slice(0, 10);
     if (/^\d{4}-\d{2}-\d{2}$/.test(fallback)) params.set('date', fallback);
@@ -259,8 +260,13 @@ export function formatDigestTaskDetail(
   task: DailyDigestPayload['tasks'][number],
   timezone?: string,
   now?: Date,
+  locale?: string,
 ): string {
-  const due = presentDueDate(task.dueAt, { timezone: timezone ?? 'UTC', ...(now ? { now } : {}) });
+  const due = presentDueDate(task.dueAt, {
+    timezone: timezone ?? 'UTC',
+    ...(now ? { now } : {}),
+    ...(locale ? { locale } : {}),
+  });
   const dueText =
     due.status === 'invalid'
       ? due.compactText
@@ -331,17 +337,17 @@ export function collapseDigestCalendarEvents(
     startAt: Date | string;
     endAt: Date | string;
     href?: string;
+    allDay?: boolean;
+    eventTimezone?: string;
     recurringParentId?: string | null;
     rrule?: string | null;
   }[],
 ): DailyDigestCalendarEvent[] {
   type Group = DailyDigestCalendarEvent & { occurrenceCount: number };
   const groups = new Map<string, Group>();
-  const order: string[] = [];
 
   for (const event of events) {
     const startAt = isoTimestamp(event.startAt);
-    const endAt = isoTimestamp(event.endAt);
     const repeating = Boolean(event.recurringParentId ?? event.rrule);
     const key = event.recurringParentId
       ? `series:${event.recurringParentId}`
@@ -349,52 +355,26 @@ export function collapseDigestCalendarEvents(
         ? `self:${event.id}`
         : `once:${event.id}`;
     const existing = groups.get(key);
-    if (existing) {
+    if (existing && startAt >= existing.startAt) {
       existing.occurrenceCount += 1;
-      if (startAt < existing.startAt) {
-        existing.id = event.recurringParentId ?? event.id;
-        existing.title = event.title;
-        existing.startAt = startAt;
-        existing.endAt = endAt;
-      }
       continue;
     }
     groups.set(key, {
       id: event.recurringParentId ?? event.id,
       title: event.title,
       startAt,
-      endAt,
-      href: event.href ?? '/app/calendar',
-      repeating,
-      occurrenceCount: 1,
+      endAt: isoTimestamp(event.endAt),
+      href: existing?.href ?? event.href ?? '/app/calendar',
+      ...(event.allDay !== undefined ? { allDay: event.allDay } : {}),
+      ...(event.eventTimezone !== undefined ? { eventTimezone: event.eventTimezone } : {}),
+      ...(repeating ? { repeating: true } : {}),
+      occurrenceCount: (existing?.occurrenceCount ?? 0) + 1,
     });
-    order.push(key);
   }
 
-  return order.map((key) => {
-    const group = groups.get(key);
-    if (!group) {
-      throw new Error(`Missing collapsed calendar group for ${key}`);
-    }
-    if (!group.repeating) {
-      return {
-        id: group.id,
-        title: group.title,
-        startAt: group.startAt,
-        endAt: group.endAt,
-        href: group.href,
-      };
-    }
-    return {
-      id: group.id,
-      title: group.title,
-      startAt: group.startAt,
-      endAt: group.endAt,
-      href: group.href,
-      repeating: true,
-      occurrenceCount: group.occurrenceCount,
-    };
-  });
+  return [...groups.values()].map(({ occurrenceCount, ...event }) =>
+    event.repeating ? { ...event, occurrenceCount } : event,
+  );
 }
 
 function isoTimestamp(value: Date | string): string {
@@ -420,7 +400,7 @@ export function formatDigestChatText(input: {
   const calendar = payload.upcomingCalendar.slice(0, 3);
   const activity = formatDigestActivityLines(digestActivityStats(payload));
   const lines = [
-    `Daily digest · ${payload.teamName}`,
+    payload.updateRevision ? 'Timeline update' : `Daily digest · ${payload.teamName}`,
     date,
     '',
     ...summaryParagraphs,

@@ -79,13 +79,8 @@ await vi.mock(
 
 const { cleanup, render, screen, within } = await import('@testing-library/react');
 
-const {
-  DigestPreferenceForm,
-  InboundEmailWhitelistForm,
-  InviteMemberForm,
-  TeamExportPanel,
-  TeamTimezoneForm,
-} = await import('./team-forms.js');
+const { InboundEmailWhitelistForm, InviteMemberForm, TeamExportPanel, TeamTimezoneForm } =
+  await import('./team-forms.js');
 
 beforeEach(() => {
   cleanup();
@@ -165,10 +160,22 @@ describe('InboundEmailWhitelistForm', () => {
 });
 
 describe('TeamTimezoneForm', () => {
+  const timezoneOptions = ['America/New_York', 'Africa/Asmara', 'Europe/Helsinki'];
+
+  it('renders the server-provided timezone list without deriving browser aliases', () => {
+    fakes.useActionState.mockReturnValue([{}, fakes.action]);
+    fakes.useFormStatus.mockReturnValue({ pending: false });
+    render(<TeamTimezoneForm timezone="America/New_York" options={timezoneOptions} />);
+
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(
+      timezoneOptions,
+    );
+  });
+
   it('keeps timezone field validation inline and leaves server failures to the action toast', () => {
     fakes.useActionState.mockReturnValue([{ ok: true }, fakes.action]);
     fakes.useFormStatus.mockReturnValue({ pending: true });
-    const view = render(<TeamTimezoneForm timezone="America/New_York" />);
+    const view = render(<TeamTimezoneForm timezone="America/New_York" options={timezoneOptions} />);
 
     expect(screen.queryByRole('button', { name: 'Save timezone' })).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
@@ -178,7 +185,7 @@ describe('TeamTimezoneForm', () => {
       fakes.action,
     ]);
     fakes.useFormStatus.mockReturnValue({ pending: false });
-    view.rerender(<TeamTimezoneForm timezone="America/New_York" />);
+    view.rerender(<TeamTimezoneForm timezone="America/New_York" options={timezoneOptions} />);
 
     const timezone = screen.getByLabelText('Team timezone');
     expect(screen.queryByRole('alert')).toBeNull();
@@ -189,7 +196,7 @@ describe('TeamTimezoneForm', () => {
     expect(timezone.getAttribute('aria-invalid')).toBeNull();
 
     fakes.useActionState.mockReturnValue([{ error: 'Choose a valid timezone' }, fakes.action]);
-    view.rerender(<TeamTimezoneForm timezone="America/New_York" />);
+    view.rerender(<TeamTimezoneForm timezone="America/New_York" options={timezoneOptions} />);
 
     expect(screen.getByLabelText('Team timezone').getAttribute('aria-invalid')).toBe('true');
     expect(screen.getByLabelText('Team timezone').getAttribute('aria-describedby')).toBe(
@@ -198,7 +205,7 @@ describe('TeamTimezoneForm', () => {
     expect(screen.getByRole('alert').id).toBe('team-timezone-error');
 
     fakes.useFormStatus.mockReturnValue({ pending: true });
-    view.rerender(<TeamTimezoneForm timezone="America/New_York" />);
+    view.rerender(<TeamTimezoneForm timezone="America/New_York" options={timezoneOptions} />);
 
     expect(screen.getByLabelText('Team timezone').getAttribute('aria-invalid')).toBeNull();
     expect(screen.getByLabelText('Team timezone').getAttribute('aria-describedby')).toBeNull();
@@ -206,21 +213,10 @@ describe('TeamTimezoneForm', () => {
 
     fakes.useActionState.mockReturnValue([{ ok: true }, fakes.action]);
     fakes.useFormStatus.mockReturnValue({ pending: false });
-    view.rerender(<TeamTimezoneForm timezone="America/New_York" />);
+    view.rerender(<TeamTimezoneForm timezone="America/New_York" options={timezoneOptions} />);
 
     expect(screen.queryByRole('status')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
-  });
-});
-
-describe('DigestPreferenceForm', () => {
-  it('gives the digest checkbox a 36px labelled target with a visible focus ring', () => {
-    render(<DigestPreferenceForm enabled />);
-
-    const checkbox = screen.getByRole('checkbox', { name: /Send me a personal daily digest/ });
-    expect(checkbox.className).toContain('focus-visible:ring-2');
-    expect(checkbox.className).toContain('hover:border-border-strong');
-    expect(checkbox.closest('label')?.className).toContain('min-h-9');
   });
 });
 
@@ -263,9 +259,10 @@ describe('InviteMemberForm', () => {
     expect(
       [...screen.getByLabelText<HTMLSelectElement>('Role').options].map((o) => o.value),
     ).toEqual(['member', 'admin']);
-    expect(screen.getByText('Invite link (copy and share):')).toBeTruthy();
+    expect(screen.getByText('Invite link')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy invite link' })).toBeTruthy();
     expect(screen.getByText('https://timeline.test/invite/token-1')).toBeTruthy();
-    expect(screen.getByRole('status').textContent).toBe(
+    expect(screen.getAllByRole('status').map((status) => status.textContent)).toContain(
       'Invite created and email sent. The invite link is ready to share.',
     );
 

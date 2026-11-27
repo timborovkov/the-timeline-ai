@@ -7,7 +7,8 @@ import { describe, it } from 'bun:test';
 
 const webSrc = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-const SKIP_APP_PREFIXES = ['app/app/', 'app/api/', 'app/dev/', 'app/(platform)/'];
+// Guest routes also resolve request identity and are never public prerendered pages.
+const SKIP_APP_PREFIXES = ['app/app/', 'app/api/', 'app/dev/', 'app/(platform)/', 'app/guest/'];
 const EXTRA_PUBLIC_MODULES = [
   'components/marketing',
   'components/help',

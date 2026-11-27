@@ -51,7 +51,6 @@ interface Run {
   status: string;
   pageCount: number;
   changedCount: number;
-  sourceUnits: number;
   createdAt: string;
   failureReason: string | null;
 }
@@ -305,7 +304,7 @@ export function WebsiteManager({
           ))}
         </div>
       )}
-      <p className="text-xs text-fg-muted">Up to 5 pages per scan · 20 source units per page</p>
+      <p className="text-xs text-fg-muted">Up to five public pages per scan</p>
       <WebsiteConfirmation
         action={confirmation?.action ?? null}
         busy={busy || (confirmation?.action === 'scan' && hasActiveScan)}
@@ -601,8 +600,8 @@ function AddWebsiteForm({
         I have permission to submit this website and its public content for scanning.
       </label>
       <p className="text-xs leading-5 text-fg-muted">
-        Adding is free. Scans use 20 source units per captured page, including unchanged pages. Up
-        to 100 units per scan; AI and storage are additional.
+        Adding a website does not start a scan. On Free and Team, capture and ordinary storage are
+        included within plan limits. AI processing uses shared Included usage.
       </p>
       <div className="flex justify-end gap-2">
         <Button
@@ -654,7 +653,6 @@ function WebsiteHistory({ runs, timezone }: { runs: Run[] | null; timezone: stri
                   </p>
                 )}
               </div>
-              <span className="text-xs tabular-nums text-fg-muted">{run.sourceUnits} units</span>
               {run.changedCount > 0 && (
                 <Link
                   className="inline-flex items-center gap-1 underline underline-offset-4"
@@ -702,7 +700,7 @@ function WebsiteConfirmation({
           <DialogTitle>{action === 'scan' ? 'Scan website?' : 'Remove website?'}</DialogTitle>
           <DialogDescription>
             {action === 'scan'
-              ? 'Scan up to five public pages for up to 100 source units? Confirm you have permission to submit this website.'
+              ? 'Confirm you have permission to scan up to five public pages. On Free and Team, any AI processing uses shared Included usage.'
               : 'Remove this source and stop future scans? Captured history will remain.'}
           </DialogDescription>
         </DialogHeader>

@@ -33,7 +33,10 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import { controlledCommunicationAudit } from '#src/test/communication-audit.js';
+import {
+  controlledCommunicationAudit,
+  controlledCommunicationAuditForSource,
+} from '#src/test/communication-audit.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import {
   assembleSuggestionPrompt,
@@ -212,11 +215,9 @@ describe('fallbackBundles', () => {
       canonicalName: 'Review the next quarter plan',
       metadata: { extracted_from_commitment: true, time_phrase: 'tomorrow' },
     });
-    expect(bundle?.items[1]?.proposedPayload).toMatchObject({
-      startDate: '2026-05-28',
-      endDate: '2026-05-29',
-      allDay: true,
-    });
+    expect(bundle?.items).toHaveLength(1);
+    expect(bundle?.items[0]?.proposedPayload.plannedDate).toBe('2026-05-28');
+    expect(bundle?.items[0]?.proposedPayload.dueAt).toBeUndefined();
   });
 
   it('still supports next weekday phrases', () => {
@@ -228,10 +229,24 @@ describe('fallbackBundles', () => {
     });
 
     expect(bundle?.items[0]?.title).toBe('Send the memo');
-    expect(bundle?.items[1]?.proposedPayload).toMatchObject({
-      startDate: '2026-06-02',
-      endDate: '2026-06-03',
+    expect(bundle?.items).toHaveLength(1);
+    expect(bundle?.items[0]?.proposedPayload.plannedDate).toBe('2026-06-02');
+  });
+
+  it('keeps a by-date as a deadline without proposing a calendar event', () => {
+    const [bundle] = fallbackBundles({
+      text: "I'll finish the access review by tomorrow.",
+      timezone: 'Europe/London',
+      occurredAt: REFERENCE_DATE,
+      authorUserId: null,
     });
+
+    expect(bundle?.items).toHaveLength(1);
+    expect(bundle?.items[0]?.proposedPayload).toMatchObject({
+      canonicalName: 'Finish the access review',
+      dueAt: '2026-05-27T23:00:00.000Z',
+    });
+    expect(bundle?.items[0]?.proposedPayload.plannedDate).toBeUndefined();
   });
 
   it('uses the sentence nearest the time phrase as the commitment title', () => {
@@ -292,10 +307,6 @@ describe('fallbackBundles', () => {
       items: [
         {
           targetKind: 'task',
-          title: 'Send the customer notice',
-        },
-        {
-          targetKind: 'calendar_event',
           title: 'Send the customer notice',
         },
       ],
@@ -454,6 +465,355 @@ describe('processSuggestionJobForTests', () => {
         ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED;
     }
     resetEnvForTests();
+  });
+
+  it('recovers a missed record maintenance job for a workspace without canonical records', async () => {
+    const id = crypto.randomUUID();
+    const quote = 'The login page is broken.';
+    await seedRawEvent(db as never, { id, source: 'slack', text: quote });
+    await withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: quote,
+      dedupeKey: id,
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: id, quote }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Fix broken login page',
+          dedupeKey: id,
+          proposedPayload: { canonicalName: 'Fix broken login page', status: 'todo' },
+          evidenceRawEventIds: [id],
+        },
+      ],
+    });
+    expect(await db.select({ id: entities.id }).from(entities)).toEqual([]);
+
+    const enqueueSuggestionJob = vi.fn().mockResolvedValue({ enqueued: true, jobId: 'sweep' });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: '__all__', triggeredBy: 'daily' },
+      { dispatchGlobalCleanup: true, enqueueSuggestionJob },
+    );
+    const recovery = { scope: 'record_maintenance', teamId: TEAM_ID } as const;
+    expect(enqueueSuggestionJob).toHaveBeenCalledOnce();
+    expect(enqueueSuggestionJob).toHaveBeenCalledWith(recovery, {
+      jobIdSuffix: new Date().toISOString().slice(0, 10),
+    });
+
+    await processSuggestionJobForTests({ db: db as never }, recovery);
+    expect(
+      await db.select({ title: entities.canonicalName, status: entities.status }).from(entities),
+    ).toEqual([{ title: 'Fix broken login page', status: 'todo' }]);
+    expect(
+      await db.select({ status: agentSuggestionItems.status }).from(agentSuggestionItems),
+    ).toEqual([{ status: 'accepted' }]);
+  });
+
+  it('applies a grounded customer link after the audited project and customer are accepted', async () => {
+    const id = crypto.randomUUID();
+    const quote = 'Link Cedar Labs to Northstar rollout.';
+    await seedRawEvent(db as never, {
+      id,
+      source: 'meeting',
+      text: '[15s] Alex: Cedar Labs is our customer. Northstar rollout is our project. ' + quote,
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: id, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: vi.fn().mockResolvedValue({
+          model: MODEL_ID,
+          object: {
+            bundles: [
+              {
+                title: 'Cedar Labs rollout',
+                confidence: 'high',
+                items: [
+                  {
+                    operation: 'create',
+                    targetKind: 'object',
+                    title: 'Cedar Labs',
+                    proposedPayload: {
+                      type: 'company',
+                      canonicalName: 'Cedar Labs',
+                      localRef: 'cedar',
+                    },
+                    grounding: [],
+                  },
+                  {
+                    operation: 'create',
+                    targetKind: 'object',
+                    title: 'Northstar rollout',
+                    proposedPayload: {
+                      type: 'project',
+                      canonicalName: 'Northstar rollout',
+                      localRef: 'northstar',
+                    },
+                    grounding: [],
+                  },
+                  {
+                    operation: 'create',
+                    targetKind: 'object_relationship',
+                    title: 'Link Cedar Labs to Northstar rollout',
+                    proposedPayload: { kind: 'related', fromRef: 'cedar', toRef: 'northstar' },
+                    grounding: [
+                      {
+                        field: 'relationship',
+                        rawEventId: id,
+                        quote,
+                        subject: 'Cedar Labs',
+                        value: 'northstar',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    );
+    const pending = await db.select().from(agentSuggestionItems);
+    expect(pending).toHaveLength(3);
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'record_maintenance', teamId: TEAM_ID },
+    );
+    const [edge] = await db.select().from(entityRelationships);
+    expect(edge?.kind).toBe('related');
+    const accepted = await db.select().from(agentSuggestionItems);
+    const link = accepted.find((item) => item.targetKind === 'object_relationship');
+    expect(link).toMatchObject({ status: 'accepted', resultId: edge?.id, resolvedByUserId: null });
+    expect(link?.metadata).toMatchObject({ approval_decision: 'automatic' });
+  });
+
+  it('automatically applies a grounded link when a sibling reference resolves to an existing record', async () => {
+    const sourceId = crypto.randomUUID();
+    const companyId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const projectId = '11111111-1111-4111-8111-111111111111';
+    await db.insert(entities).values([
+      { id: companyId, teamId: TEAM_ID, type: 'company', canonicalName: 'Cedar Labs' },
+      {
+        id: projectId,
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Northstar rollout',
+        status: 'planning',
+      },
+    ]);
+    const state = 'Northstar rollout is underway.';
+    const link = 'Link Cedar Labs to Northstar rollout.';
+    await seedRawEvent(db as never, {
+      id: sourceId,
+      source: 'meeting',
+      text: `[15s] Alex: ${state} ${link}`,
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: sourceId, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: vi.fn().mockResolvedValue({
+          model: MODEL_ID,
+          object: {
+            bundles: [
+              {
+                title: 'Cedar Labs rollout',
+                confidence: 'high',
+                items: [
+                  {
+                    operation: 'create',
+                    targetKind: 'object',
+                    title: 'Northstar rollout',
+                    proposedPayload: {
+                      type: 'project',
+                      canonicalName: 'Northstar rollout',
+                      localRef: 'northstar',
+                      status: 'active',
+                    },
+                    grounding: [
+                      {
+                        field: 'status',
+                        rawEventId: sourceId,
+                        quote: state,
+                        subject: 'Northstar rollout',
+                        value: 'active',
+                      },
+                    ],
+                  },
+                  {
+                    operation: 'create',
+                    targetKind: 'object_relationship',
+                    title: 'Link Cedar Labs to Northstar rollout',
+                    proposedPayload: {
+                      kind: 'related',
+                      fromEntityId: companyId,
+                      toRef: 'northstar',
+                    },
+                    grounding: [
+                      {
+                        field: 'relationship',
+                        rawEventId: sourceId,
+                        quote: link,
+                        subject: 'Cedar Labs',
+                        value: 'northstar',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'record_maintenance', teamId: TEAM_ID },
+    );
+    const [approval] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.targetKind, 'object_relationship'));
+    expect(approval).toMatchObject({ status: 'accepted', resolvedByUserId: null });
+    const [edge] = await db.select().from(entityRelationships);
+    expect(edge).toMatchObject({
+      id: approval?.resultId,
+      kind: 'related',
+      fromEntityId: projectId,
+      toEntityId: companyId,
+    });
+  });
+
+  it('advances an existing deal from audited offer delivery through automatic approval', async () => {
+    const [deal] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'deal',
+        canonicalName: 'Northstar rollout',
+        status: 'open',
+      })
+      .returning();
+    if (!deal) throw new Error('Missing deal fixture');
+    const id = crypto.randomUUID();
+    const quote = 'The offer for Northstar rollout has been sent.';
+    await seedRawEvent(db as never, {
+      id,
+      source: 'meeting',
+      text: '[30s] Alex: ' + quote,
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: id, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: vi.fn().mockResolvedValue({
+          model: MODEL_ID,
+          object: {
+            bundles: [
+              {
+                title: 'Northstar proposal delivered',
+                confidence: 'high',
+                items: [
+                  {
+                    operation: 'update',
+                    targetKind: 'object',
+                    targetId: deal.id,
+                    title: 'Northstar proposal delivered',
+                    proposedPayload: { status: 'proposal' },
+                    grounding: [
+                      {
+                        field: 'status',
+                        rawEventId: id,
+                        quote,
+                        subject: 'Northstar rollout',
+                        value: 'proposal',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'record_maintenance', teamId: TEAM_ID },
+    );
+    const [applied] = await db.select().from(agentSuggestionItems);
+    expect(applied).toMatchObject({
+      status: 'accepted',
+      resultId: deal.id,
+      resolvedByUserId: null,
+    });
+    expect(applied?.metadata).toMatchObject({ approval_decision: 'automatic' });
+    const [updated] = await db
+      .select({ status: entities.status })
+      .from(entities)
+      .where(eq(entities.id, deal.id));
+    expect(updated?.status).toBe('proposal');
+  });
+
+  it('audits a team meeting and automatically applies its two independent task reports', async () => {
+    const id = crypto.randomUUID();
+    await seedRawEvent(db as never, {
+      id,
+      source: 'meeting',
+      text: '[30s] Alex: The login page is broken.\n[40s] Lee: The export button is broken.',
+    });
+    const titles = ['Broken login page', 'Broken export button'];
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: id, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: vi.fn().mockResolvedValue({
+          model: MODEL_ID,
+          object: {
+            bundles: [
+              {
+                title: 'Unresolved defects',
+                confidence: 'high',
+                items: titles.map((title) => ({
+                  operation: 'create',
+                  targetKind: 'task',
+                  title,
+                  proposedPayload: { canonicalName: title },
+                  grounding: [],
+                })),
+              },
+            ],
+          },
+        }),
+      },
+    );
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.items).toHaveLength(2);
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'record_maintenance', teamId: TEAM_ID },
+    );
+    const items = await db.select().from(agentSuggestionItems);
+    expect(
+      items.every(
+        (item) =>
+          item.status === 'accepted' && item.resultId !== null && item.resolvedByUserId === null,
+      ),
+    ).toBe(true);
+    const tasks = await db.select().from(entities).where(eq(entities.type, 'task'));
+    expect(tasks.map((task) => task.canonicalName).sort()).toEqual([...titles].sort());
+    expect(tasks.every((task) => task.assigneeUserId === null)).toBe(true);
   });
 
   it('skips suggestion extraction for integration-sourced events without calling the LLM', async () => {
@@ -696,6 +1056,148 @@ describe('processSuggestionJobForTests', () => {
 
     expect(chat).not.toHaveBeenCalled();
     await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 1 });
+    const [proposal] = await db.select().from(agentSuggestionItems);
+    expect(proposal?.status).toBe('pending');
+    const [unchanged] = await db
+      .select({ status: entities.status })
+      .from(entities)
+      .where(eq(entities.id, task.id));
+    expect(unchanged?.status).toBe('todo');
+  });
+
+  it('applies current Monday mapped completion and keeps later human corrections', async () => {
+    const externalObjectId = '1771812728';
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: OWNER_ID,
+        provider: 'monday',
+        displayName: 'Monday QA board',
+        externalAccountId: 'qa',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    const [task] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Login QA',
+        status: 'todo',
+        aliases: [externalObjectId],
+      })
+      .returning();
+    if (!task || !integration) throw new Error('Missing Monday fixtures');
+    const integrationId = integration.id;
+
+    async function capture(
+      status: 'open' | 'done',
+      at: string,
+      visibility: 'team' | 'private' = 'team',
+    ) {
+      const id = crypto.randomUUID();
+      await seedRawEvent(db as never, {
+        id,
+        source: 'integration',
+        visibility,
+        occurredAt: new Date(at),
+        text: 'Monday item updated on QA: Login QA',
+        sourceMetadata: {
+          provider: 'monday',
+          integration_id: integrationId,
+          signal_class: 'captured_work',
+          event_type: 'item.updated',
+          external_object_id: externalObjectId,
+          object_map: {
+            type: 'task',
+            canonicalName: 'Monday record 1771812728: Login QA',
+            displayTitle: 'Login QA',
+            externalId: externalObjectId,
+            status,
+            aliases: [externalObjectId, 'monday:1771812728'],
+          },
+        },
+      });
+      return id;
+    }
+
+    const chat = emptyModel();
+    const io = {
+      getEnv: env,
+      chatStructured: chat,
+      takeIngestProcessingSlot: vi.fn().mockResolvedValue({ allowed: true }),
+    };
+    const original = await capture('done', '2026-06-01T12:00:00Z');
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: original, teamId: TEAM_ID },
+      io,
+    );
+    const [unmatched] = await db.select().from(agentSuggestionItems);
+    expect(unmatched?.status).toBe('pending');
+
+    await db
+      .update(entities)
+      .set({
+        metadata: { integration_provider: 'monday', integration_external_id: externalObjectId },
+      })
+      .where(eq(entities.id, task.id));
+    await capture('open', '2026-06-02T12:00:00Z');
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: original, teamId: TEAM_ID },
+      io,
+    );
+    const human = withTeam(db as never, TEAM_ID, OWNER_ID);
+    expect(await human.objects.getObject(task.id)).toMatchObject({ status: 'todo' });
+
+    const completion = await capture('done', '2026-06-03T12:00:00Z');
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'github_task_proposal',
+        teamId: TEAM_ID,
+        integrationId,
+        externalObjectId,
+      },
+      io,
+    );
+    const [accepted] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.status, 'accepted'));
+    expect(accepted).toMatchObject({
+      targetId: task.id,
+      resultId: task.id,
+      resolvedByUserId: null,
+    });
+    expect(accepted?.metadata).toMatchObject({
+      approval_decision: 'automatic',
+      approval_policy_revision: '0',
+    });
+    const [applied] = await db.select().from(entities).where(eq(entities.id, task.id));
+    expect(applied).toMatchObject({ status: 'done', assigneeUserId: null });
+    expect(applied?.recordFieldRevisions.status?.rawEventId).toBe(completion);
+
+    await human.objects.updateObject(
+      task.id,
+      { status: 'doing' },
+      { kind: 'user', userId: OWNER_ID },
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: completion, teamId: TEAM_ID },
+      io,
+    );
+    const privateCompletion = await capture('done', '2026-06-04T12:00:00Z', 'private');
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: privateCompletion, teamId: TEAM_ID },
+      io,
+    );
+    expect(await human.objects.getObject(task.id)).toMatchObject({ status: 'doing' });
+    expect(chat).not.toHaveBeenCalled();
   });
 
   it('delays coalesced GitHub task proposal jobs when the connection budget is exhausted', async () => {
@@ -951,7 +1453,23 @@ describe('processSuggestionJobForTests', () => {
     expect(suggestionMetadata?.cross_source_evidence_mode).toBe('shadow');
     expect(suggestionMetadata?.shadow_evidence_pack_fingerprint).toMatch(/^[a-f0-9]{64}$/);
     expect(suggestion?.metadata).not.toHaveProperty('evidence_pack_fingerprint');
-    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 2 });
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 1 });
+    const planned = await pg.query<{
+      target_kind: string;
+      proposed_payload: Record<string, unknown>;
+    }>('SELECT target_kind, proposed_payload FROM agent_suggestion_items WHERE team_id = $1', [
+      TEAM_ID,
+    ]);
+    expect(planned.rows).toHaveLength(1);
+    expect(planned.rows[0]).toMatchObject({
+      target_kind: 'task',
+      proposed_payload: {
+        canonicalName: 'Send the Acme proposal',
+        plannedDate: '2026-06-02',
+        ownerUserId: OWNER_ID,
+      },
+    });
+    expect(planned.rows[0]?.proposed_payload).not.toHaveProperty('dueAt');
   });
 
   it('records a shadow pack failure and preserves legacy proposal extraction', async () => {
@@ -989,7 +1507,23 @@ describe('processSuggestionJobForTests', () => {
       },
     });
     expect(JSON.stringify(event?.sourceMetadata)).not.toContain('private query failure');
-    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 2 });
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 1 });
+    const planned = await pg.query<{
+      target_kind: string;
+      proposed_payload: Record<string, unknown>;
+    }>('SELECT target_kind, proposed_payload FROM agent_suggestion_items WHERE team_id = $1', [
+      TEAM_ID,
+    ]);
+    expect(planned.rows).toHaveLength(1);
+    expect(planned.rows[0]).toMatchObject({
+      target_kind: 'task',
+      proposed_payload: {
+        canonicalName: 'Send the Acme proposal',
+        plannedDate: '2026-06-02',
+        ownerUserId: OWNER_ID,
+      },
+    });
+    expect(planned.rows[0]?.proposed_payload).not.toHaveProperty('dueAt');
   });
 
   it('requires and persists exact per-item evidence ids in enforced mode', async () => {
@@ -1334,7 +1868,23 @@ describe('processSuggestionJobForTests', () => {
         ],
       }).bundles[0]?.items[0],
     ).not.toHaveProperty('evidenceRawEventIds');
-    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 2 });
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 1 });
+    const planned = await pg.query<{
+      target_kind: string;
+      proposed_payload: Record<string, unknown>;
+    }>('SELECT target_kind, proposed_payload FROM agent_suggestion_items WHERE team_id = $1', [
+      TEAM_ID,
+    ]);
+    expect(planned.rows).toHaveLength(1);
+    expect(planned.rows[0]).toMatchObject({
+      target_kind: 'task',
+      proposed_payload: {
+        canonicalName: 'Send the Acme proposal',
+        plannedDate: '2026-06-02',
+        ownerUserId: OWNER_ID,
+      },
+    });
+    expect(planned.rows[0]?.proposed_payload).not.toHaveProperty('dueAt');
   });
 
   it('rejects an enforced bundle that cites an id outside the selected pack', async () => {
@@ -3064,7 +3614,7 @@ describe('processSuggestionJobForTests', () => {
     },
   );
 
-  it('turns a commitment raw event into task and calendar suggestions through fallback', async () => {
+  it('turns a commitment raw event into a planned task without a calendar suggestion through fallback', async () => {
     const rawEventId = 'e6ff3009-4745-5ed8-a861-9c15588b7429';
     await seedRawEvent(db as never, {
       id: rawEventId,
@@ -3087,22 +3637,14 @@ describe('processSuggestionJobForTests', () => {
       rawEventId,
       quote: "I'll send the proposal next Tuesday",
     });
-    expect(bundles[0]?.items.map((item) => item.targetKind)).toEqual(
-      expect.arrayContaining(['task', 'calendar_event']),
-    );
-    const task = bundles[0]?.items.find((item) => item.targetKind === 'task');
-    const calendar = bundles[0]?.items.find((item) => item.targetKind === 'calendar_event');
+    expect(bundles[0]?.items.map((item) => item.targetKind)).toEqual(['task']);
+    const task = bundles[0]?.items[0];
     expect(task?.proposedPayload).toMatchObject({
       canonicalName: 'Send the proposal',
       ownerUserId: OWNER_ID,
+      plannedDate: '2026-06-02',
     });
-    expect(calendar?.proposedPayload).toMatchObject({
-      title: 'Send the proposal',
-      startDate: '2026-06-02',
-      endDate: '2026-06-03',
-      allDay: true,
-      visibility: 'team',
-    });
+    expect(task?.proposedPayload.dueAt).toBeUndefined();
 
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(event?.sourceMetadata).toMatchObject({
@@ -3163,9 +3705,6 @@ describe('processSuggestionJobForTests', () => {
     expect(call?.instructions).toContain('proposedPayload.priority');
     expect(call?.instructions).toContain(
       'Curated document chunks in the prompt are reference knowledge',
-    );
-    expect(call?.instructions).toContain(
-      'Named work the team is tracking is a task, not a follow_up',
     );
     expect(prompt).toContain(
       'Open tasks listed here can be marked done from later outcome evidence',
@@ -8164,6 +8703,89 @@ describe('processSuggestionJobForTests', () => {
     expect(review?.metadata).toMatchObject({ review_outcome: 'identity_missing' });
   });
 
+  it('keeps an independent Slack task report when a merge request ends the review window', async () => {
+    const reportId = crypto.randomUUID();
+    const mergeId = crypto.randomUUID();
+    const reviewId = crypto.randomUUID();
+    const rootTimestamp = '1716810300.000100';
+    const channel = { slack_workspace_id: 'T1', slack_channel_id: 'C2' };
+    const report = 'The login page is broken.';
+    await db.insert(entities).values([
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'First import' },
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'Second import' },
+    ]);
+    await seedRawEvent(db as never, {
+      id: reportId,
+      source: 'slack',
+      text: report,
+      occurredAt: new Date('2026-05-27T10:05:00.000Z'),
+      sourceMetadata: { ...channel, slack_message_ts: rootTimestamp },
+    });
+    await seedRawEvent(db as never, {
+      id: mergeId,
+      source: 'slack',
+      text: 'Merge Second import into First import.',
+      occurredAt: new Date('2026-05-27T10:07:00.000Z'),
+      sourceMetadata: {
+        ...channel,
+        slack_message_ts: '1716810420.000200',
+        slack_thread_ts: rootTimestamp,
+      },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey: `slack:${TEAM_ID}:T1:C2:thread:${rootTimestamp}`,
+      lastRawEventId: mergeId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: vi.fn().mockResolvedValue({
+          model: MODEL_ID,
+          object: {
+            bundles: [
+              {
+                title: 'Fix broken login page',
+                quote: report,
+                evidenceRawEventIds: [reportId],
+                confidence: 'high',
+                items: [
+                  {
+                    operation: 'create',
+                    targetKind: 'task',
+                    title: 'Fix broken login page',
+                    proposedPayload: { canonicalName: 'Fix broken login page' },
+                    grounding: [],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'record_maintenance', teamId: TEAM_ID },
+    );
+    const items = await db.select().from(agentSuggestionItems);
+    expect(items).toHaveLength(2);
+    expect(items.find(({ operation }) => operation === 'merge')).toMatchObject({
+      status: 'pending',
+      resultId: null,
+    });
+    expect(items.find(({ targetKind }) => targetKind === 'task')).toMatchObject({
+      status: 'accepted',
+      resolvedByUserId: null,
+    });
+    const [task] = await db.select().from(entities).where(eq(entities.type, 'task'));
+    expect(task?.canonicalName).toBe('Fix broken login page');
+  });
+
   it('includes the Slack thread root and follow-up in the thread evidence window', async () => {
     const rootId = 'ec34642e-863d-532c-84ad-18d3433d32f2';
     const replyId = 'e5cde87c-909a-5de3-b453-e20ce90768c9';
@@ -8688,7 +9310,12 @@ describe('processSuggestionJobForTests', () => {
     await processSuggestionJobForTests(
       { db: db as never },
       { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
-      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+      {
+        getEnv: env,
+        chatStructured: chat,
+        modelId: MODEL_ID,
+        auditCommunication: controlledCommunicationAuditForSource(promiseId),
+      },
     );
 
     const call = chat.mock.calls[0]?.[0] as { prompt: string; instructions: string };
@@ -8718,7 +9345,7 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
-  it('ignores conversation-review item citations that lexical bundle evidence omitted', async () => {
+  it('uses audited coverage instead of unrelated model item citations', async () => {
     const citedId = '10000000-0000-4000-8000-0000000000a1';
     const anchorId = '10000000-0000-4000-8000-0000000000a2';
     const reviewId = '20000000-0000-4000-8000-0000000000a1';
@@ -8803,17 +9430,15 @@ describe('processSuggestionJobForTests', () => {
       OWNER_ID,
     ).suggestions.listPendingSuggestions();
     expect(bundle?.evidence).toEqual([expect.objectContaining({ rawEventId: anchorId })]);
-    expect(bundle?.items[0]).toMatchObject({
-      evidenceStatus: 'legacy',
-      evidence: [],
-    });
+    expect(bundle?.items[0]?.evidenceStatus).toBe('current');
+    expect(bundle?.items[0]?.evidence?.map((entry) => entry.rawEventId)).toEqual([anchorId]);
     const [item] = await db
       .select({ metadata: agentSuggestionItems.metadata })
       .from(agentSuggestionItems)
       .limit(1);
     expect(
       (item?.metadata as { evidence_raw_event_ids?: string[] } | null)?.evidence_raw_event_ids,
-    ).toBeUndefined();
+    ).toEqual([anchorId]);
   });
 
   it('drops event-local item citations that are not the current raw event', async () => {
@@ -10449,7 +11074,7 @@ describe('processSuggestionJobForTests', () => {
       suggestion_pre_extract_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
       suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
     });
-    expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 2 });
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 1 });
   });
 
   it('is idempotent when the same model version reruns', async () => {
@@ -10472,8 +11097,17 @@ describe('processSuggestionJobForTests', () => {
     );
 
     expect(chat).toHaveBeenCalledOnce();
-    expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 2 });
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 1 });
     const rows = await db.select().from(agentSuggestionItems);
-    expect(new Set(rows.map((row) => row.dedupeKey)).size).toBe(2);
+    expect(new Set(rows.map((row) => row.dedupeKey)).size).toBe(1);
+    expect(rows[0]).toMatchObject({
+      targetKind: 'task',
+      proposedPayload: {
+        canonicalName: 'Send the proposal',
+        plannedDate: '2026-06-02',
+        ownerUserId: OWNER_ID,
+      },
+    });
+    expect(rows[0]?.proposedPayload).not.toHaveProperty('dueAt');
   });
 });

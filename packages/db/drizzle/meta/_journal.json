@@ -839,7 +839,119 @@
       "idx": 119,
       "version": "7",
       "when": 1795658700000,
-      "tag": "0112_structured_imports",
+      "tag": "0112_guest_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1795658800000,
+      "tag": "0113_guest_record_shares",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1795658900000,
+      "tag": "0114_team_seat_terms",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1795659000000,
+      "tag": "0115_billing_reservation_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1795659100000,
+      "tag": "0116_scheduled_update_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1795659200000,
+      "tag": "0117_task_planned_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1795659300000,
+      "tag": "0118_task_planned_date_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1795659400000,
+      "tag": "0119_record_maintenance_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1795659500000,
+      "tag": "0120_guest_live_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1795659600000,
+      "tag": "0121_record_field_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1795659700000,
+      "tag": "0122_guest_live_record_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1795659800000,
+      "tag": "0123_expand_record_field_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1795659900000,
+      "tag": "0124_billing_plan_seat_pricing",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1795660000000,
+      "tag": "0125_enterprise_fee_currency",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1795660100000,
+      "tag": "0126_enterprise_storage_pricing",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1795660200000,
+      "tag": "0127_scheduled_updates",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1795660300000,
+      "tag": "0128_structured_imports",
       "breakpoints": true
     }
   ]

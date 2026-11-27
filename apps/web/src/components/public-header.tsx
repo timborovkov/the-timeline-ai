@@ -34,7 +34,6 @@ export function PublicHeader({
         />
       </nav>
       <div className={styles.actions}>
-        <GitHubSourceLink compact className={styles.githubLink} />
         {showAccountActions ? (
           <PublicSessionBranch
             signedOut={
@@ -49,6 +48,7 @@ export function PublicHeader({
             signedIn={null}
           />
         ) : null}
+        <GitHubSourceLink compact className={styles.githubLink} />
         <ThemeToggle className={styles.themeToggle} />
         {showAccountActions ? (
           <PublicSessionBranch

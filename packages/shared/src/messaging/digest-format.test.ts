@@ -153,17 +153,21 @@ describe('collapseDigestCalendarEvents', () => {
   it('keeps one-off events and collapses a repeating series to the next occurrence', () => {
     const collapsed = collapseDigestCalendarEvents([
       {
-        id: 'occ-1',
-        title: 'Internal daily call',
-        startAt: '2026-08-17T08:00:00.000Z',
-        endAt: '2026-08-17T08:30:00.000Z',
-        recurringParentId: 'series-1',
-      },
-      {
         id: 'occ-2',
         title: 'Internal daily call',
         startAt: '2026-08-18T08:00:00.000Z',
         endAt: '2026-08-18T08:30:00.000Z',
+        allDay: false,
+        eventTimezone: 'America/Los_Angeles',
+        recurringParentId: 'series-1',
+      },
+      {
+        id: 'occ-1',
+        title: 'Internal daily call',
+        startAt: '2026-08-17T08:00:00.000Z',
+        endAt: '2026-08-17T08:30:00.000Z',
+        allDay: true,
+        eventTimezone: 'Europe/Helsinki',
         recurringParentId: 'series-1',
       },
       {
@@ -181,6 +185,8 @@ describe('collapseDigestCalendarEvents', () => {
         startAt: '2026-08-17T08:00:00.000Z',
         endAt: '2026-08-17T08:30:00.000Z',
         href: '/app/calendar',
+        allDay: true,
+        eventTimezone: 'Europe/Helsinki',
         repeating: true,
         occurrenceCount: 2,
       },
@@ -366,5 +372,19 @@ describe('digestCalendarHref', () => {
     expect(digestCalendarHref({ id: 'cal-1', startAt: '2026-07-17T08:00:00.000Z' }, 'UTC')).toBe(
       '/app/calendar?view=day&date=2026-07-17&event=cal-1',
     );
+  });
+
+  it('keeps timed events on the workspace-local day', () => {
+    expect(
+      digestCalendarHref(
+        {
+          id: 'cal-1',
+          startAt: '2026-07-26T21:00:00.000Z',
+          allDay: false,
+          eventTimezone: 'Europe/Helsinki',
+        },
+        'America/Los_Angeles',
+      ),
+    ).toBe('/app/calendar?view=day&date=2026-07-26&event=cal-1');
   });
 });

@@ -77,7 +77,7 @@ Subscribe to bot events:
 3.  Members can click **Connect identity** to link their Slack user. Linking is required for DMs and user-scoped actions; bound channels can still answer `/ask` and `@Timeline` for unlinked senders using team-visible history.
 4.  Owner/admin chooses channels/private channels from the picker and binds them.
 
-The bot must be present in a private channel before Slack will deliver history/events for it. DMs need no channel binding; they route through the linked Slack user's active team. Daily digest delivery uses the same bot token: a workspace can post the team-visible digest to a channel the bot is in, or DM every linked member. Add `im:write` so the bot can open those DMs. Configure destinations in Team settings → Preferences.
+The bot must be present in a private channel before Slack will deliver history/events for it. DMs need no channel binding; they route through the linked Slack user's active team. Updates use the same bot token. In Team settings → General → Digest destinations, enable Slack channel or personal DM delivery. Add `im:write` so the bot can open DMs. See [Updates delivery and archive](../design/app.md#home).
 
 In a DM, ordinary text and `/ask <question>` create durable agent turns. `/timeline note <text>` captures evidence, `/timeline new` resets private history, `/timeline team` lists eligible teams, `/timeline team <number>` switches and resets history, `/timeline whereami` shows the route, and `/timeline help` prints the command guide. Messages with files always ingest, including their captions.
 

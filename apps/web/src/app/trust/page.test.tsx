@@ -76,7 +76,8 @@ describe('Trust page', () => {
     expect(html).toContain('Firecrawl');
     expect(html).toContain('public pages of a website URL submitted during first-run onboarding');
     expect(html).toContain('What Timeline preserves');
-    expect(html).toContain('human review instead of applying it on its own');
+    expect(html).toContain('apply automatically under workspace policy');
+    expect(html).toContain('go to authorized reviewers');
     expect(html).toContain('Kept as received');
     expect(html).toContain('Placed on one chronology');
   });

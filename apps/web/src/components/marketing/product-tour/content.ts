@@ -2,16 +2,15 @@ import type { PublicCanonicalPath } from '@/lib/public-site';
 
 export const PRODUCT_TOUR = {
   route: '/product-tour' as const satisfies PublicCanonicalPath,
-  seoTitle: 'See it first: a tour of The Timeline',
+  seoTitle: 'Product tour',
   seoDescription:
     'See The Timeline in action: connect sources, build lasting records, review proposed changes, read daily updates and ask questions with sources.',
   eyebrow: 'Product tour',
-  title: 'See it first.',
+  title: 'Follow the work from source to answer.',
   summary:
-    'See how The Timeline brings context from your tools and sources into a living work record, with connected objects, daily updates and proposed changes to review.',
-  closingTitle: 'Link one channel. Watch the record fill in.',
-  closingBody:
-    'Scan a website, upload a document, or forward an email—or skip. Connect Slack or Telegram later at go-live. Then read the daily update, approve lasting record changes, and ask with the source for every line.',
+    'Start with an illustrative login issue, then explore product screenshots from a separate sample workspace.',
+  closingTitle: 'Start with one source.',
+  closingBody: 'Connect a relevant source and ask about the work happening there.',
   steps: [
     {
       index: '01',
@@ -25,7 +24,7 @@ export const PRODUCT_TOUR = {
     },
     {
       index: '02',
-      headline: 'Everything lands on one timeline.',
+      headline: 'Follow activity on the timeline.',
       caption:
         'Messages, notes, documents and code activity in order, each with who said it, where and when.',
       file: '11-timeline-dark.png',
@@ -45,7 +44,7 @@ export const PRODUCT_TOUR = {
     },
     {
       index: '04',
-      headline: 'The record keeps itself current.',
+      headline: 'Open a record to see its context.',
       caption:
         'A project’s status, blocker and review date, written from the evidence and linked back to it.',
       file: '23-project-northstar-dark.png',
@@ -65,9 +64,9 @@ export const PRODUCT_TOUR = {
     },
     {
       index: '06',
-      headline: 'Lasting record changes wait for your approval.',
+      headline: 'Review proposed record changes.',
       caption:
-        'Proposed tasks, dates and record changes wait in a queue, each with why it was suggested and its source. Captured evidence still lands on the timeline automatically.',
+        'By default, eligible routine changes apply automatically and appear in the record history with their sources. Workspace policy controls which changes need review. The screenshot shows the review queue.',
       file: '29-approvals-dark.png',
       alt: 'Approvals queue of proposed tasks, dates and record changes.',
       reshoot: undefined,
@@ -86,7 +85,7 @@ export const PRODUCT_TOUR = {
     {
       index: '08',
       headline: 'Ask, and get the receipts.',
-      caption: 'Every line cites where it came from.',
+      caption: 'Follow citations back to the sources behind the answer.',
       file: '32-ask-handoff-dark.png',
       alt: 'Ask handoff brief with every line cited to its source.',
       reshoot: undefined,

@@ -38,7 +38,7 @@ describe('editorial metadata', () => {
     const metadata = createHowItWorksMetadata();
 
     const description =
-      'See how The Timeline retrieves cited evidence from conversations and documents, balances relevance with freshness, and distinguishes accepted records from pending changes. Newer evidence does not automatically overwrite the record.';
+      'See how The Timeline captures selected activity, answers with evidence, and records automatic changes and review exceptions under your workspace policy.';
     expect(metadata.description).toBe(description);
     expect(metadata.alternates).toEqual({ canonical: HOW_IT_WORKS_ROUTE });
     expect(metadata.openGraph).toMatchObject({

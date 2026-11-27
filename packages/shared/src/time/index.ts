@@ -128,6 +128,12 @@ function validPlainDate(value: string): Temporal.PlainDate | null {
   }
 }
 
+export function dateOnlyDueDateKey(value: string): string | null {
+  if (LOCAL_DATE_PATTERN.test(value)) return value;
+  // Date-only deadlines are also stored as UTC midnight.
+  return UTC_MIDNIGHT_PATTERN.test(value) ? value.slice(0, 10) : null;
+}
+
 function dueDateKey(value: Date | string, timezone: string): string | null {
   let source: string;
   try {
@@ -135,11 +141,8 @@ function dueDateKey(value: Date | string, timezone: string): string | null {
   } catch {
     return null;
   }
-  if (LOCAL_DATE_PATTERN.test(source)) return validPlainDate(source)?.toString() ?? null;
-  if (UTC_MIDNIGHT_PATTERN.test(source)) {
-    const date = source.slice(0, 10);
-    return validPlainDate(date)?.toString() ?? null;
-  }
+  const dateOnly = dateOnlyDueDateKey(source);
+  if (dateOnly) return validPlainDate(dateOnly)?.toString() ?? null;
   try {
     return localDateFromInstant(new Date(source).toISOString(), timezone);
   } catch {

@@ -1,10 +1,15 @@
 import { PGlite } from '@electric-sql/pglite';
-import { teams, teamBillingAccounts, type Db } from '@timeline/db';
+import { teams, teamBillingAccounts, teamMembers, type Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import {
+  applyOwnedTeamFreeGrant,
+  assertTeamMemberSeatCapacity,
+  reconcileTeamPaidSeats,
+} from '#src/billing/capacity.js';
 import {
   billingStateForPolarSubscriptionUpsert,
   billingStateFromPolarSubscriptionStatus,
@@ -19,7 +24,7 @@ import {
   shouldResetIncludedDiscount,
   spendCapCentsForPaidActivation,
 } from '#src/billing/polar-webhook.js';
-import { createFakeBillingProvider } from '#src/billing/provider.js';
+import { createFakeBillingProvider, type TeamSeatSubscription } from '#src/billing/provider.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { assertActivePrincipal } from '#src/platform-admin/runtime.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -233,6 +238,254 @@ describe('Polar webhook helpers', () => {
 });
 
 describe('handlePolarWebhookEvent', () => {
+  it('does not grant legacy access for malformed USD quotes or EUR seat subscriptions', async () => {
+    for (const terms of [{ currency: 'usd' }, { currency: 'eur', seats: 2 }]) {
+      await handlePolarWebhookEvent({
+        db,
+        products: PRODUCTS,
+        chargesEnabled: true,
+        payload: {
+          type: 'subscription.updated',
+          data: {
+            id: 'sub_invalid_seat',
+            product_id: PRODUCTS.team,
+            status: 'active',
+            customer: { id: 'cus_invalid_seat', external_id: TEAM_ID },
+            recurring_interval: 'month',
+            recurring_interval_count: 1,
+            current_period_start: '2026-11-01',
+            current_period_end: '2026-12-01',
+            ...terms,
+          },
+        },
+      });
+      expect(
+        await db.select().from(teamBillingAccounts).where(eq(teamBillingAccounts.teamId, TEAM_ID)),
+      ).toHaveLength(0);
+    }
+  });
+
+  it('applies legacy EUR Team renewal, past-due and recovery without granting seats', async () => {
+    const update = (status: string, start: string, end: string) =>
+      handlePolarWebhookEvent({
+        db,
+        products: PRODUCTS,
+        chargesEnabled: true,
+        payload: {
+          type: 'subscription.updated',
+          data: {
+            id: 'sub_legacy_eur',
+            product_id: PRODUCTS.team,
+            customer: { id: 'cus_legacy_eur', external_id: TEAM_ID },
+            currency: 'eur',
+            status,
+            recurring_interval: 'month',
+            recurring_interval_count: 1,
+            current_period_start: start,
+            current_period_end: end,
+          },
+        },
+      });
+    const read = async () =>
+      (
+        await db.select().from(teamBillingAccounts).where(eq(teamBillingAccounts.teamId, TEAM_ID))
+      )[0];
+    await update('active', '2026-10-01', '2026-11-01');
+    expect(await read()).toMatchObject({ billingState: 'team_active', teamSeatTerms: null });
+    await db
+      .update(teamBillingAccounts)
+      .set({ includedDiscountRemainingCents: 17 })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    await update('active', '2026-11-01', '2026-12-01');
+    expect(await read()).toMatchObject({
+      includedDiscountRemainingCents: 6000,
+      teamSeatTerms: null,
+    });
+    await update('past_due', '2026-11-01', '2026-12-01');
+    expect((await read())?.billingState).toBe('past_due');
+    await update('active', '2026-11-01', '2026-12-01');
+    expect((await read())?.billingState).toBe('team_active');
+  });
+
+  it('grants confirmed USD Team seat allowance once, prorates increases, and replaces balances at renewal', async () => {
+    const update = (seats: number, at: string, start: string, end: string) =>
+      handlePolarWebhookEvent({
+        db,
+        products: PRODUCTS,
+        chargesEnabled: true,
+        payload: {
+          type: 'subscription.updated',
+          data: {
+            id: 'sub_usd_team',
+            status: 'active',
+            product_id: PRODUCTS.team,
+            customer: { id: 'cus_usd_team', external_id: TEAM_ID },
+            seats,
+            currency: 'usd',
+            recurring_interval: 'month',
+            recurring_interval_count: 1,
+            modified_at: at,
+            current_period_start: start,
+            current_period_end: end,
+          },
+        },
+      });
+    const account = async () =>
+      (
+        await db.select().from(teamBillingAccounts).where(eq(teamBillingAccounts.teamId, TEAM_ID))
+      )[0];
+    const start = '2026-11-01T00:00:00Z';
+    const end = '2026-12-01T00:00:00Z';
+    await update(1, start, start, end);
+    expect(await account()).toMatchObject({
+      includedDiscountRemainingCents: 1200,
+      spendCapCents: 0,
+    });
+    await db
+      .update(teamBillingAccounts)
+      .set({ includedDiscountRemainingCents: 900 })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    const addAt = '2026-11-16T00:00:00Z';
+    await update(2, addAt, start, end);
+    await update(2, addAt, start, end);
+    expect(await account()).toMatchObject({
+      includedDiscountRemainingCents: 1500,
+      teamSeatTerms: { paidSeats: 2, highWaterSeats: 2, includedUsageCents: 1800 },
+    });
+    await update(1, end, end, '2027-01-01T00:00:00Z');
+    await update(2, addAt, start, end);
+    expect(await account()).toMatchObject({
+      includedDiscountRemainingCents: 1200,
+      teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+    });
+  });
+
+  it('uses verified seat reads to order delayed status and cancellation webhooks', async () => {
+    const provider = createFakeBillingProvider({ teamIdentity: true });
+    if (!provider.identity) throw new Error('Missing fixture identity');
+    const customer = await provider.identity.create(TEAM_ID, 'Polar Hook', {
+      userId: USER_ID,
+      email: 'owner@example.test',
+    });
+    const now = Date.now();
+    const date = (days: number) => new Date(now + days * 86_400_000);
+    const periodStart = date(-15);
+    const periodEnd = date(15);
+    let subscription: TeamSeatSubscription = {
+      id: 'sub_verified_team',
+      customerId: customer.id,
+      productId: PRODUCTS.team,
+      seats: 1,
+      pendingSeats: null,
+      status: 'active',
+      periodStart,
+      periodEnd,
+      modifiedAt: date(-5),
+    };
+    provider.getTeamSeatSubscription = () => Promise.resolve(subscription);
+    provider.updateTeamSeatSubscription = () => {
+      throw new Error('Maintenance should not update the verified seat quantity');
+    };
+    await db.insert(teamBillingAccounts).values({
+      teamId: TEAM_ID,
+      polarCustomerId: customer.id,
+      polarOrganizationId: provider.identity.organizationId,
+      polarServer: provider.identity.server,
+    });
+    const webhook = (input: {
+      status: string;
+      at: Date;
+      cancelAtPeriodEnd: boolean;
+      type?: string;
+      creationTimeOnly?: boolean;
+    }) =>
+      handlePolarWebhookEvent({
+        db,
+        provider,
+        products: PRODUCTS,
+        chargesEnabled: true,
+        payload: {
+          type: input.type ?? 'subscription.updated',
+          data: {
+            id: subscription.id,
+            status: input.status,
+            product_id: PRODUCTS.team,
+            customer: { id: customer.id, external_id: TEAM_ID },
+            seats: 1,
+            currency: 'usd',
+            recurring_interval: 'month',
+            recurring_interval_count: 1,
+            ...(input.creationTimeOnly
+              ? { created_at: input.at.toISOString() }
+              : { modified_at: input.at.toISOString() }),
+            current_period_start: periodStart.toISOString(),
+            current_period_end: periodEnd.toISOString(),
+            cancel_at_period_end: input.cancelAtPeriodEnd,
+          },
+        },
+      });
+    const account = async () =>
+      (
+        await db.select().from(teamBillingAccounts).where(eq(teamBillingAccounts.teamId, TEAM_ID))
+      )[0];
+    const reconcile = () => reconcileTeamPaidSeats({ db, teamId: TEAM_ID, provider });
+
+    await webhook({ status: 'active', at: periodStart, cancelAtPeriodEnd: false });
+    await reconcile();
+    expect(await account()).toMatchObject({
+      polarEventModifiedAt: periodStart,
+      cancelEffectiveAt: null,
+    });
+
+    subscription = { ...subscription, cancelEffectiveAt: periodEnd };
+    await reconcile();
+    await webhook({
+      status: 'past_due',
+      at: date(-6),
+      cancelAtPeriodEnd: false,
+      creationTimeOnly: true,
+    });
+    expect(await account()).toMatchObject({
+      billingState: 'team_active',
+      polarEventModifiedAt: subscription.modifiedAt,
+      cancelEffectiveAt: periodEnd,
+    });
+
+    subscription = {
+      ...subscription,
+      cancelEffectiveAt: null,
+      modifiedAt: date(-3),
+    };
+    await reconcile();
+    await webhook({
+      status: 'canceled',
+      at: date(-4),
+      cancelAtPeriodEnd: true,
+      type: 'subscription.canceled',
+    });
+    expect(await account()).toMatchObject({
+      billingState: 'team_active',
+      polarEventModifiedAt: subscription.modifiedAt,
+      cancelEffectiveAt: null,
+      includedDiscountRemainingCents: 1200,
+    });
+
+    const renewalAt = subscription.modifiedAt;
+    subscription = { ...subscription, modifiedAt: date(-5), cancelEffectiveAt: periodEnd };
+    await reconcile();
+    expect(await account()).toMatchObject({
+      polarEventModifiedAt: renewalAt,
+      cancelEffectiveAt: null,
+    });
+
+    const laterEventAt = date(-2);
+    await webhook({ status: 'past_due', at: laterEventAt, cancelAtPeriodEnd: false });
+    expect(await account()).toMatchObject({
+      billingState: 'past_due',
+      polarEventModifiedAt: laterEventAt,
+    });
+  });
+
   it('keeps disabled teams inaccessible and renews cancellation intent after a delayed activation', async () => {
     await pg.exec(`INSERT INTO team_billing_accounts (team_id, security_state) VALUES ('${TEAM_ID}', 'suspended');
       UPDATE teams SET disabled_at=now(), lifecycle_work='{"billingPending":false}' WHERE id='${TEAM_ID}';`);
@@ -500,6 +753,7 @@ describe('handlePolarWebhookEvent', () => {
           id: 'sub_enterprise',
           status: 'active',
           product_id: 'prod_enterprise',
+          currency: 'usd',
           customer: { id: 'cus_enterprise', external_id: TEAM_ID },
         },
       },
@@ -511,13 +765,14 @@ describe('handlePolarWebhookEvent', () => {
     expect(account.spendCapCents).toBe(80000);
     expect(account.pendingEnterpriseTerms).toBeNull();
     expect(account.enterprisePlatformFeeCents).toBe(250000);
+    expect(account.enterprisePlatformFeeCurrency).toBe('USD');
     expect(account.priceOverride).toEqual({
       includedActiveMembers: 12,
     });
     expect(account.priceOverrideExpiresAt).toBeNull();
   });
 
-  it('activates only the Enterprise checkout that Polar says was paid', async () => {
+  it('applies Enterprise checkout terms and removes its reference only after activation', async () => {
     const billing = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -530,20 +785,45 @@ describe('handlePolarWebhookEvent', () => {
       SET plan_id = 'payg', billing_state = 'payg_active', spend_cap_cents = 2500,
           pending_enterprise_terms = '{"byCheckoutId":{"chk_early":{"platformFeeCents":100000,"spendCapCents":40000},"chk_later":{"platformFeeCents":250000,"includedActiveMembers":12,"spendCapCents":80000}}}'::jsonb
       WHERE team_id = '${TEAM_ID}';
+      UPDATE teams SET lifecycle_work = '{"pendingCheckoutIds":["chk_early","chk_later"]}'
+      WHERE id = '${TEAM_ID}';
     `);
+    const subscription = {
+      id: 'sub_early',
+      product_id: 'prod_enterprise',
+      checkout_id: 'chk_early',
+      customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+    };
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.created',
+        data: { ...subscription, status: 'incomplete', modified_at: '2026-02-01T00:00:00Z' },
+      },
+    });
+    expect(await billing.getAccount()).toMatchObject({
+      billingState: 'payment_retry',
+      spendCapCents: 2500,
+      enterprisePlatformFeeCents: null,
+      pendingEnterpriseTerms: {
+        byCheckoutId: {
+          chk_early: { platformFeeCents: 100000, spendCapCents: 40000 },
+          chk_later: { platformFeeCents: 250000, includedActiveMembers: 12, spendCapCents: 80000 },
+        },
+      },
+    });
+    const [pending] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+    expect(pending?.lifecycleWork.pendingCheckoutIds).toEqual(['chk_early', 'chk_later']);
+
     await handlePolarWebhookEvent({
       db,
       chargesEnabled: true,
       products: PRODUCTS,
       payload: {
         type: 'subscription.active',
-        data: {
-          id: 'sub_early',
-          status: 'active',
-          product_id: 'prod_enterprise',
-          checkout_id: 'chk_early',
-          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
-        },
+        data: { ...subscription, status: 'active', modified_at: '2026-02-01T00:01:00Z' },
       },
     });
     const account = await billing.getAccount();
@@ -560,6 +840,60 @@ describe('handlePolarWebhookEvent', () => {
         },
       },
     });
+    const [workspace] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+    expect(workspace?.lifecycleWork.pendingCheckoutIds).toEqual(['chk_later']);
+  });
+
+  it('releases only the terminated Enterprise checkout after an incomplete payment', async () => {
+    await pg.exec(`
+      UPDATE teams SET lifecycle_work = '{"pendingCheckoutIds":["chk_ended","chk_open"]}'
+      WHERE id = '${TEAM_ID}';
+      INSERT INTO team_billing_accounts (
+        team_id, plan_id, billing_state, polar_subscription_id, polar_event_modified_at,
+        pending_enterprise_terms
+      ) VALUES (
+        '${TEAM_ID}', 'enterprise', 'payment_retry', 'sub_ended', '2026-02-01T00:00:00Z',
+        '{"byCheckoutId":{"chk_ended":{"platformFeeCents":100000},"chk_open":{"platformFeeCents":250000}}}'
+      );
+    `);
+    const subscription = {
+      id: 'sub_ended',
+      product_id: 'prod_enterprise',
+      checkout_id: 'chk_ended',
+      customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+      status: 'revoked',
+    };
+    const revoke = (modifiedAt: string) =>
+      handlePolarWebhookEvent({
+        db,
+        chargesEnabled: true,
+        products: PRODUCTS,
+        payload: {
+          type: 'subscription.revoked',
+          data: { ...subscription, modified_at: modifiedAt },
+        },
+      });
+    await revoke('2026-01-31T23:59:00Z');
+    const [before] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(before?.billingState).toBe('payment_retry');
+    expect(before?.pendingEnterpriseTerms).toMatchObject({
+      byCheckoutId: { chk_ended: { platformFeeCents: 100000 } },
+    });
+
+    await revoke('2026-02-01T00:01:00Z');
+    const [after] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(after?.polarSubscriptionId).toBeNull();
+    expect(after?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: { chk_open: { platformFeeCents: 250000 } },
+    });
+    const [workspace] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+    expect(workspace?.lifecycleWork.pendingCheckoutIds).toEqual(['chk_open']);
   });
 
   it('does not apply another Enterprise checkout when the paid event names a different one', async () => {
@@ -771,6 +1105,48 @@ describe('handlePolarWebhookEvent', () => {
       `SELECT count(*)::text AS count FROM billing_unbilled_alerts WHERE team_id = '${TEAM_ID}'`,
     );
     expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
+  });
+
+  it('keeps a confirmed Team subscription when a newer paid checkout arrives', async () => {
+    await pg.exec(`
+      INSERT INTO team_billing_accounts
+        (team_id, plan_id, billing_state, polar_customer_id, polar_subscription_id,
+         polar_product_id, period_started_at, polar_event_modified_at, included_discount_remaining_cents)
+      VALUES ('${TEAM_ID}', 'team', 'team_active', 'cus_team', 'sub_kept',
+        'prod_team', '2026-06-01', '2026-06-01', 1170)
+    `);
+    const provider = createFakeBillingProvider();
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      provider,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_duplicate',
+          status: 'active',
+          product_id: PRODUCTS.team,
+          current_period_start: '2026-07-01T00:00:00Z',
+          current_period_end: '2026-08-01T00:00:00Z',
+          modified_at: '2026-07-01T00:00:00Z',
+          customer: { id: 'cus_team', external_id: TEAM_ID },
+          seats: 2,
+          currency: 'usd',
+          recurring_interval: 'month',
+          recurring_interval_count: 1,
+        },
+      },
+    });
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account).toMatchObject({
+      polarSubscriptionId: 'sub_kept',
+      includedDiscountRemainingCents: 1170,
+    });
+    expect(provider.revokedSubscriptionIds).toEqual(['sub_duplicate']);
   });
 
   it('revokes a newer checkout that loses to the subscription already tracked', async () => {
@@ -1182,6 +1558,50 @@ describe('handlePolarWebhookEvent', () => {
     expect(ended.cancelEffectiveAt).toBeNull();
   });
 
+  it('preserves existing full members on downgrade and enforces the Free cap on additions', async () => {
+    await pg.exec(`
+      UPDATE users SET "emailVerified" = now() WHERE id = '${USER_ID}';
+      INSERT INTO users (email)
+      SELECT 'downgrade-' || n || '@example.test' FROM generate_series(1, 3) n;
+      INSERT INTO team_members (team_id, user_id, role)
+      SELECT '${TEAM_ID}', id, 'member' FROM users WHERE email LIKE 'downgrade-%';
+    `);
+    expect((await applyOwnedTeamFreeGrant({ db, teamId: TEAM_ID, userId: USER_ID })).ok).toBe(true);
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'team',
+        billingState: 'team_active',
+        polarSubscriptionId: 'sub_downgrade',
+        teamSeatTerms: { paidSeats: 4, highWaterSeats: 4, includedUsageCents: 4800 },
+      })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.revoked',
+        data: {
+          id: 'sub_downgrade',
+          status: 'canceled',
+          product_id: PRODUCTS.team,
+          customer: { id: 'cus_fixture', external_id: TEAM_ID },
+        },
+      },
+    });
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account).toMatchObject({ planId: 'free', billingState: 'free', teamSeatTerms: null });
+    const roster = await db.select().from(teamMembers).where(eq(teamMembers.teamId, TEAM_ID));
+    expect(roster.filter((member) => !member.removedAt)).toHaveLength(4);
+    await expect(assertTeamMemberSeatCapacity({ db, teamId: TEAM_ID })).rejects.toThrow(
+      'Active member limit reached',
+    );
+  });
+
   it('downgrades on subscription.revoked while a period-end cancel is still scheduled', async () => {
     const billing = createBillingScope({
       db,
@@ -1347,6 +1767,98 @@ describe('handlePolarWebhookEvent', () => {
     expect(kept.polarSubscriptionId).toBe('sub_resume');
     expect(kept.cancelEffectiveAt).toBeNull();
   });
+
+  it.each(['renewed', 'unverified', 'scheduled', 'ended', 'ended_at'] as const)(
+    'checks a due seat cancellation against the verified provider state (%s)',
+    async (status) => {
+      const provider = createFakeBillingProvider({ teamIdentity: true });
+      if (!provider.identity) throw new Error('Expected a verified provider identity');
+      const customer = await provider.identity.create(TEAM_ID, 'Polar Hook', {
+        userId: USER_ID,
+        email: 'owner@example.test',
+      });
+      const periodStart = new Date('2099-06-01T00:00:00Z');
+      const periodEnd = new Date('2099-07-01T00:00:00Z');
+      const now = new Date('2099-07-02T00:00:00Z');
+      const nextPeriodEnd = new Date('2099-08-01T00:00:00Z');
+      const providerClock = new Date('2099-07-01T01:00:00Z');
+      await db.insert(teamBillingAccounts).values({
+        teamId: TEAM_ID,
+        planId: 'team',
+        billingState: 'team_active',
+        polarSubscriptionId: 'sub_due_seats',
+        polarCustomerId: customer.id,
+        polarProductId: PRODUCTS.team,
+        polarServer: 'sandbox',
+        polarOrganizationId: 'org-synthetic',
+        polarEventModifiedAt: new Date('2099-06-15T00:00:00Z'),
+        teamSeatTerms: { paidSeats: 2, highWaterSeats: 2, includedUsageCents: 2400 },
+        includedDiscountRemainingCents: 17,
+        periodStartedAt: periodStart,
+        periodEndsAt: periodEnd,
+        cancelEffectiveAt: periodEnd,
+      });
+      provider.getTeamSeatSubscription = () => {
+        if (status === 'unverified') throw new Error('Provider temporarily unavailable');
+        const renewing = status === 'renewed';
+        return Promise.resolve({
+          id: 'sub_due_seats',
+          productId: PRODUCTS.team,
+          customerId: customer.id,
+          seats: 2,
+          pendingSeats: null,
+          status: status === 'ended' ? 'canceled' : 'active',
+          periodStart: renewing ? periodEnd : periodStart,
+          periodEnd: renewing ? nextPeriodEnd : periodEnd,
+          modifiedAt: providerClock,
+          cancelEffectiveAt: renewing || status === 'ended_at' ? null : periodEnd,
+          endedAt: status === 'ended_at' ? periodEnd : null,
+        });
+      };
+      provider.updateTeamSeatSubscription = () => {
+        throw new Error('A renewal check cannot adjust the billed quantity');
+      };
+      // Match ordinary maintenance: the cancellation pass verifies safety, then
+      // the active subscription reconciliation applies the renewed allowance.
+      expect(await applyElapsedScheduledCancellations(db, now, { provider })).toBe(
+        status === 'ended' || status === 'ended_at' ? 1 : 0,
+      );
+      if (status === 'renewed') {
+        await pg.exec(`
+          INSERT INTO users (id, email)
+          VALUES ('33333333-4444-4555-8666-777777777777', 'second@example.test');
+          INSERT INTO team_members (team_id, user_id, role)
+          VALUES ('${TEAM_ID}', '33333333-4444-4555-8666-777777777777', 'member');
+        `);
+        await reconcileTeamPaidSeats({ db, provider, teamId: TEAM_ID });
+      }
+      const [account] = await db
+        .select()
+        .from(teamBillingAccounts)
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      if (status === 'renewed') {
+        expect(account).toMatchObject({
+          planId: 'team',
+          cancelEffectiveAt: null,
+          polarEventModifiedAt: providerClock,
+          periodEndsAt: nextPeriodEnd,
+          includedDiscountRemainingCents: 2400,
+        });
+      } else if (status === 'unverified' || status === 'scheduled') {
+        expect(account).toMatchObject({
+          planId: 'team',
+          cancelEffectiveAt: periodEnd,
+          includedDiscountRemainingCents: 17,
+        });
+      } else {
+        expect(account).toMatchObject({
+          planId: 'free',
+          cancelEffectiveAt: null,
+          teamSeatTerms: null,
+        });
+      }
+    },
+  );
 
   it('does not downgrade when the locked cancel is no longer due', async () => {
     const billing = createBillingScope({

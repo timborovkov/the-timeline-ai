@@ -7,9 +7,10 @@ type JobRecoveryItem = jobRecovery.JobRecoveryItem;
 export function jobRecoveryRowHint(
   item: Pick<JobRecoveryItem, 'artifactId' | 'detectedAt' | 'error' | 'id'>,
   timezone: string,
+  locale?: string,
 ): string {
   const lines = [
-    formatDisplayDateTime(item.detectedAt, { timezone }),
+    formatDisplayDateTime(item.detectedAt, { timezone, locale }),
     `Job ID: ${item.id} | Artifact UUID: ${item.artifactId}`,
   ];
   if (item.error) lines.push(item.error);

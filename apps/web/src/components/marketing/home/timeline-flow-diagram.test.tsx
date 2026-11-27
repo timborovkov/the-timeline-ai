@@ -20,7 +20,7 @@ describe('TimelineFlowDiagram', () => {
     expect(within(figure).queryByText('The Timeline')).toBeNull();
     expect(within(figure).queryByText('Work record')).toBeNull();
     expect(within(figure).queryByText('one timeline')).toBeNull();
-    expect(within(figure).getByText('Decisions, promises & next steps')).toBeTruthy();
+    expect(within(figure).getByText('What changed & what’s next')).toBeTruthy();
     expect(within(figure).getByText('Sources attached')).toBeTruthy();
     expect(within(figure).queryByText(/Fictional Acme example/i)).toBeNull();
     expect(within(figure).queryByText(/not used in this answer/i)).toBeNull();
@@ -84,7 +84,7 @@ describe('TimelineFlowDiagram', () => {
 
     expect(screen.getByRole('heading', { level: 3, name: 'Connect' })).toBeTruthy();
     expect(screen.getByRole('heading', { level: 3, name: 'Capture' })).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 3, name: 'Approve' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 3, name: 'Connect related work' })).toBeTruthy();
     expect(screen.getByRole('heading', { level: 3, name: 'Stay current and ask' })).toBeTruthy();
 
     const steps = [...container.querySelectorAll('[data-flow-step]')].map((step) =>
@@ -110,49 +110,49 @@ describe('TimelineFlowDiagram', () => {
     ).toBeTruthy();
     expect(within(evidenceSources).getByText('Meetings & documents')).toBeTruthy();
     expect(
-      within(evidenceSources).getByText('Launch review · Document Drive baseline'),
+      within(evidenceSources).getByText('Optional call capture · Uploaded reference files'),
     ).toBeTruthy();
     expect(within(evidenceSources).getByText('Delivery & incidents')).toBeTruthy();
     expect(within(evidenceSources).getByText('GitHub changes · Sentry issues')).toBeTruthy();
     expect(within(evidenceSources).queryByText(/Linear/)).toBeNull();
-    expect(screen.getByText('+ Any source via a pre-built integration or webhook')).toBeTruthy();
+    expect(
+      screen.getByText('More sources are available through supported integrations and webhooks.'),
+    ).toBeTruthy();
 
     const timelineHeading = screen.getByRole('heading', { name: 'Capture' });
     const timelineStage = timelineHeading.closest('article');
     if (!timelineStage) throw new Error('The timeline heading must belong to a stage');
-    expect(within(timelineStage).getAllByRole('listitem')).toHaveLength(5);
-    for (const eventId of ['[01]', '[03]', '[04]', '[06]', '[07]']) {
+    expect(within(timelineStage).getAllByRole('listitem')).toHaveLength(3);
+    for (const eventId of ['[01]', '[02]', '[03]']) {
       expect(within(timelineStage).getByText(eventId)).toBeTruthy();
     }
     const timelineStamps = [...timelineStage.querySelectorAll('time')];
-    expect(timelineStamps).toHaveLength(5);
+    expect(timelineStamps).toHaveLength(3);
     expect(timelineStamps.every((stamp) => stamp.hasAttribute('datetime'))).toBe(true);
-    expect(within(timelineStage).getByText('Staged rollout plan added')).toBeTruthy();
-    expect(within(timelineStage).getByText('Login issue regressed in staging')).toBeTruthy();
+    expect(within(timelineStage).getByText('Login page reported broken')).toBeTruthy();
+    expect(within(timelineStage).getByText('Change linked to the login issue merges')).toBeTruthy();
 
     const workspaceRecords = screen.getByRole('list', {
       name: 'Example Timeline working context',
     });
-    expect(within(workspaceRecords).getAllByRole('listitem')).toHaveLength(4);
-    for (const type of ['Project', 'Task', 'CRM', 'Decision']) {
-      expect(within(workspaceRecords).getByText(type, { selector: 'span' })).toBeTruthy();
-    }
-    expect(
-      screen.getByText('CRM · Task boards · Issue tracking · Calendar · Document Drive'),
-    ).toBeTruthy();
+    expect(within(workspaceRecords).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(workspaceRecords).getByText('Investigate the login issue')).toBeTruthy();
+    expect(screen.getByText('Task boards · Customer context · Calendar · Files')).toBeTruthy();
 
     const assistantSurfaces = screen.getByRole('list', { name: 'Timeline assistant surfaces' });
     for (const surface of ['Web', 'Slack', 'Telegram', 'Own agent via MCP']) {
       expect(within(assistantSurfaces).getByText(surface)).toBeTruthy();
     }
-    expect(screen.getByText('Live CRM via MCP · Claude · Codex · Any MCP client')).toBeTruthy();
-    expect(screen.getByText(/SSO still blocks launch/)).toBeTruthy();
-    expect(container.querySelectorAll('[data-flow-citation]')).toHaveLength(3);
-    expect(screen.getByText('Sources stay attached.')).toBeTruthy();
-    expect(screen.getByText('Timeline record changes need approval.')).toBeTruthy();
     expect(
-      screen.getByText('Enabled MCP tools can read or update connected systems such as your CRM.'),
+      screen.getByText('Compatible agent clients · Claude · Codex · Any MCP client'),
     ).toBeTruthy();
+    expect(screen.getByText(/A linked change merged/)).toBeTruthy();
+    expect(container.querySelectorAll('[data-flow-citation]')).toHaveLength(2);
+    expect(screen.getByText('Sources stay attached.')).toBeTruthy();
+    expect(
+      screen.getByText('History records applied changes. Exceptions go to review.'),
+    ).toBeTruthy();
+    expect(screen.getByText('Enabled external tools have their own permissions.')).toBeTruthy();
     expect(container.querySelectorAll('[data-flow-packet]')).toHaveLength(5);
   });
 });

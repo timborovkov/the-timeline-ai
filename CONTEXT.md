@@ -40,7 +40,7 @@ Definitions for product and engineering discussions. Current behavior belongs in
 | **Core Evidence** | The anchor events and protected same-conversation events that define an evidence review. |
 | **Correction Proposal** | An approval-backed suggestion created when newer evidence disagrees with already accepted or otherwise canonical workspace state. |
 | **Date-Only Calendar Event** | A calendar event mentioned with a date but no time. |
-| **Digest Destination** | A workspace-configured place the daily digest is sent. |
+| **Digest Destination** | A workspace-configured channel or personal delivery method for Updates. |
 | **Direct Agent Conversation** | A private, provider-backed conversation between one verified Timeline user and the agent. |
 | **Document Drive** | The curated browsing surface for folders and documents. |
 | **Document** | A durable team knowledge file that members intentionally browse, version, and manage in the document drive. |
@@ -83,7 +83,7 @@ Definitions for product and engineering discussions. Current behavior belongs in
 | **Object Memory Proposal** | An approval-backed agent suggestion to create or update object memory, such as adding an alias, identity facet, relationship, note, field value, or missing workspace object. |
 | **Object Memory** | The team's durable understanding of a workspace object: its canonical name, aliases, structured fields, relationships, facts, notes, and approved changes over time. |
 | **Object Relationship** | A durable object-memory edge between two workspace objects, such as a person being linked to a company, a task blocking a project, or two objects being otherwise connected. |
-| **Onboarding Checklist** | A dismissible team setup checklist that teaches the product loop: capture, invite teammates, connect chat and email, upload a document, ask the agent, invite the bot to a call, review a proposal, configure daily digests, and connect a source, webhook, or Timeline MCP. |
+| **Onboarding Checklist** | A dismissible team setup checklist that teaches the product loop: capture, invite teammates, connect chat and email, upload a document, ask the agent, invite the bot to a call, review a proposal, configure Updates, and connect a source, webhook, or Timeline MCP. |
 | **Owner/Admin** | A team member with elevated control over team settings and shared operational workflows. |
 | **Person Object Candidate** | A reviewable proposal for a person workspace object. |
 | **Person Object** | A workspace object for a real-world person, whether or not that person belongs to the Timeline team. |

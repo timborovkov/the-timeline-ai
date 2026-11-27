@@ -8,6 +8,10 @@ export interface EventListFilters {
   /** Exclusive upper bound on `occurred_at`. Callers wanting "include all of
    *  day X" should pass midnight UTC of day X+1. */
   to?: Date;
+  /** Inclusive lower bound on when the event was captured. */
+  capturedFrom?: Date;
+  /** Exclusive upper bound on when the event was captured. */
+  capturedBefore?: Date;
   /**
    * Narrow to one or more `event_source` values. Pushes the predicate into
    * SQL so `limit` bounds the matching rows (not the pre-filter window).

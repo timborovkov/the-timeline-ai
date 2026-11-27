@@ -1,8 +1,10 @@
 /** Shared product positioning; route-specific metadata stays in the public registry. */
 export const PRODUCT_POSITIONING = {
-  hero: 'Your team’s work becomes a living record. Bring in context from the tools and sources you use, and turn it into connected clients, projects, tasks and decisions—with sources attached and changes you approve.',
-  title: 'Your team’s living work record',
+  promise:
+    'Know what changed, what was agreed, and what still needs doing—without reading every conversation.',
+  hero: 'The Timeline connects activity and conversations into a shared work record with sources attached. People and AI agents can ask about it, read updates, and explore related work.',
+  title: 'A shared work record for teams and their AI agents',
   description:
-    'Turn context from your tools and sources into connected clients, projects, tasks and decisions—with sources attached and changes you approve.',
-  socialAlt: 'The Timeline — Your team’s work becomes a living record.',
+    'Know what changed, what was agreed, and what still needs doing with a source-linked work record shared by people and AI agents.',
+  socialAlt: 'The Timeline · Know where the work stands.',
 } as const;

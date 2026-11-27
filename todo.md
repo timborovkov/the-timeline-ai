@@ -11,7 +11,7 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 | R3 | Promote evidence packs per adapter. | [Rollout gates](docs/relational-memory.md#cross-source-evidence-rollout): remaining adapters, shadow sample, safety/quality/cost/latency evidence, monitoring and explicit enforcement. |
 | R4 | Verify hosted MCP and publish the intended directories. | [Publication runbook](docs/marketplace-submissions.md): real-host OAuth/tool smoke tests, reviewer/support readiness, approval and visible listing; coworker client acceptance remains separately evidenced. |
 | R5 | Close security/privacy and legal evidence gaps. | The sole gap register is [security gaps](docs/security-gaps.md), including license/DPA/legal review, exact-text acceptance, analytics/legacy Convex, provider controls, staff access, backups and deletion. Do not duplicate individual gaps here. |
-| R6 | Complete billing production acceptance before enabling charges. | [Polar setup](docs/setup/polar.md): real webhook, shadow reconciliation period and invoice/member-access verification. Resolve or explicitly retain the provider's legacy customer-email limitation. No wallet/auto-reload flow is planned. |
+| R6 | Verify paid billing and provider member access. | The [USD cutover](docs/evidence/polar-usd-catalog-2026-11-24.md) has unpaid quote and deployment evidence. The [remaining checks](docs/setup/polar.md#verification-and-release) cover paid confirmation, invoices, tax, proration, registered delivery, reconciliation and member access. Resolve or explicitly retain the legacy customer-email limitation. |
 | R7 | Establish backup automation and recovery evidence. | [Operations](docs/operations.md): secondary object-storage copies, vector snapshots, Postgres retention, isolated restore drill, named operator and recurring schedule; cross-reference security gap G-06. |
 | R8 | Complete operational monitoring. | Queue/failure/retrieval freshness and provider-spend dashboards with actionable alerts, documented ownership and a tested response path. |
 | R9 | Verify the Drive project-field noise safeguard in production. | Deploy and capture a fresh Doc edit; the missed 9 November Doc event will not reappear on redeploy because its noise verdict advanced the comparison snapshot. See [Drive lifecycle](docs/architecture/drive.md). |
@@ -30,7 +30,6 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 | P10 | Add the targeted file inspection tool. | Let Ask inspect a known original for a narrow question and optionally persist reusable evidence under the [captured-file contract](docs/captured-files.md). |
 | P11 | Extend captured-work and supporting evidence coverage. | Parent IDs for pulses, GitHub review discussion, document-chunk pack admission and summary refresh, Linear/Monday actor mapping, and later Jira/CRM adapters. Follow [engine authority](docs/relational-memory.md); no semantic-only canonical writes. |
 | P12 | Improve residual behavioral test coverage. | Restore/deeper permission/session-isolation paths, real queue/storage/DB contracts and end-to-end first-value/payment/provider flows. Use existing suites; [testing](docs/testing/README.md) owns execution policy. |
-
 | P13 | Verify pre-launch engine against restricted representative Railway events. | Confirm deployed scheduler/worker health and measure labeled identity/relationship precision and recall on real events; synthetic evidence does not close this operational gate. See [engine evaluation](docs/relational-memory.md#evaluation-and-operational-diagnosis). |
 
 ## Conditional work
@@ -49,6 +48,6 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 
 ## Product validation
 
-Run a closed beta with 3–5 friendly teams. Measure text/voice capture friction (initial targets under 10/15 seconds), cited answer usefulness (initial target over 85% positive), daily object use, and correct-version document answers. Treat these as proposed pilot targets, not achieved metrics. Use findings to choose prompt changes; re-extract only through the bounded runbook.
+Prepare the first customer offer and recruit a direct pilot, starting with the customer-facing cofounder hypothesis in the [product brief](docs/product-brief.md#who-it-serves). Learn from one piece of ongoing work and a real question. Set formal targets after pilot learning.
 
 Recurring backups, rotation, capacity review and isolation checks are procedures in [operations](docs/operations.md), not permanently unchecked roadmap entries.

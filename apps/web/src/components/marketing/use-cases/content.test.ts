@@ -11,15 +11,17 @@ import {
 } from '@/components/marketing/use-cases/content';
 
 describe('use-case content', () => {
-  it('publishes six distinct jobs plus a hub without inventing customers or weekly framing', () => {
-    expect(USE_CASES).toHaveLength(6);
+  it('publishes five distinct jobs plus a hub without inventing customers', () => {
+    expect(USE_CASES).toHaveLength(5);
     expect(USE_CASE_CANONICAL_ROUTES).toEqual(USE_CASES.map((useCase) => useCase.route));
-    expect(new Set(USE_CASES.map((useCase) => useCase.seoTitle)).size).toBe(6);
+    expect(new Set(USE_CASES.map((useCase) => useCase.seoTitle)).size).toBe(5);
     expect(USE_CASE_HUB.route).toBe('/use-cases');
 
     const copy = JSON.stringify({ hub: USE_CASE_HUB, useCases: USE_CASES });
     expect(copy).not.toMatch(/WhatsApp|Slack Connect|Teams chat/iu);
-    expect(copy).not.toMatch(/\bweekly\b/iu);
+    const dailyLog = findUseCase('team-daily-log');
+    expect(dailyLog?.howItWorks?.join(' ')).toContain('daily brief or weekly overview');
+    expect(dailyLog?.faqs[0]?.answer).toContain('A workspace admin manages delivery');
     expect(copy).not.toMatch(/testimonial|customer data|Northline/iu);
 
     for (const useCase of USE_CASES) {
@@ -31,10 +33,10 @@ describe('use-case content', () => {
     }
   });
 
-  it('keeps the public Use cases menu aligned with the six jobs and the product tour', () => {
+  it('keeps the footer aligned with the use-case hub and handoff route', () => {
     expect(USE_CASE_NAV_ITEMS.map((item) => item.href)).toEqual([
       ...USE_CASE_CANONICAL_ROUTES,
-      '/product-tour',
+      '/solutions/client-project-handoffs',
     ]);
   });
 });

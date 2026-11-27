@@ -972,6 +972,49 @@ describe('settlement period attribution', () => {
     ]);
   });
 
+  it('preserves a UTC month’s charge when renewal falls within the final minute', () => {
+    const startedAt = new Date('2026-10-31T23:58:40.000Z');
+    const endedAt = new Date('2026-11-01T00:00:20.000Z');
+    const renewal = new Date('2026-10-31T23:59:30.000Z');
+    const periodEndsAt = new Date('2026-11-30T23:59:30.000Z');
+    const segments = settlementSegmentsForMeter({
+      meterId: 'recall_minutes',
+      nativeUnits: 2,
+      startedAt,
+      endedAt,
+    }).map((segment) => ({ ...segment, actualChargeCents: segment.nativeUnits * 3 }));
+
+    expect(segments).toEqual([
+      { periodYm: '2026-10', nativeUnits: 1, actualChargeCents: 3 },
+      { periodYm: '2026-11', nativeUnits: 1, actualChargeCents: 3 },
+    ]);
+    expect(
+      recallDiscountWindowShares({
+        startedAt,
+        endedAt,
+        nativeUnits: 2,
+        periodStartedAt: renewal,
+        periodEndsAt,
+        segments,
+      }),
+    ).toEqual([
+      {
+        usageAt: renewal,
+        windowStartedAt: renewal,
+        windowEndsAt: periodEndsAt,
+        nativeUnits: 1,
+        chargeCents: 3,
+      },
+      {
+        usageAt: new Date('2026-11-01T00:00:00.000Z'),
+        windowStartedAt: renewal,
+        windowEndsAt: periodEndsAt,
+        nativeUnits: 1,
+        chargeCents: 3,
+      },
+    ]);
+  });
+
   it('keeps AI and other non-duration meters in the start period', () => {
     expect(
       settlementSegmentsForMeter({

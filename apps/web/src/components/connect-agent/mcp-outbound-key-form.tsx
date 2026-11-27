@@ -112,8 +112,8 @@ export function McpOutboundKeyForm({
         <span>
           <span className="block text-sm font-medium">Allow website scans</span>
           <span className="text-xs text-fg-muted">
-            Can scan public websites after permission confirmation. Each captured page uses 20
-            source units.
+            Can scan up to five public pages after permission confirmation. On Free and Team, AI
+            processing uses shared Included usage.
           </span>
         </span>
       </label>

@@ -178,7 +178,7 @@ export function McpGuidePage() {
                 </h2>
                 <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
                   {MCP_GUIDE_PAGE.catalog.intro} Hosted catalog tools today:{' '}
-                  {catalog.hostedToolsLabel}.
+                  {catalog.hostedToolsLabel}. {MCP_GUIDE_PAGE.catalog.unavailable}
                 </p>
                 {catalog.localDesktopTools.length > 0 ? (
                   <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">

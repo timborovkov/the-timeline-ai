@@ -160,13 +160,13 @@ function OperatorEnterpriseForm(props: { teamId: string }) {
     <SettingsSection title="Enterprise checkout">
       <p className="text-sm text-fg-muted">
         Saves Enterprise terms, then opens a Timeline Enterprise checkout for the negotiated
-        platform fee. Metered usage and extra members invoice on that subscription. Cancel any
-        current Polar subscription first.
+        platform fee. Check the checkout currency before sharing the link. Cancel any current Polar
+        subscription first.
       </p>
       <form action={startEnterpriseCheckoutAction} className="space-y-3">
         <input type="hidden" name="teamId" value={props.teamId} />
         <label className="block text-sm">
-          <span className="text-fg-muted">Platform fee (EUR)</span>
+          <span className="text-fg-muted">Platform fee (checkout currency)</span>
           <input
             name="platformFeeEuros"
             type="number"

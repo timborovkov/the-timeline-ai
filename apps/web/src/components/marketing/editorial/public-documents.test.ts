@@ -39,8 +39,8 @@ describe('editorial public documents', () => {
 
   it('dates reviewed guides independently from the how-it-works overview', () => {
     expect(findEditorialPublicDocument(HOW_IT_WORKS_ROUTE).dates).toEqual({
-      modified: '2026-11-11',
-      reviewed: '2026-11-11',
+      modified: '2026-11-24',
+      reviewed: '2026-11-24',
     });
     for (const guide of EDITORIAL_GUIDES) {
       expect(findEditorialPublicDocument(guide.route).dates).toEqual({

@@ -22,6 +22,7 @@ export function customerBillingState(input: {
   meteredSpendCents: number;
   /** Spend-cap percent. Null when the plan has no positive cap. */
   warnPercent: number | null;
+  usesSeatBilling?: boolean;
 }): keyof typeof BILLING_NOTICE_TITLE | null {
   if (input.billingState === 'past_due' || input.billingState === 'payment_retry') {
     return 'payment_failed';
@@ -34,7 +35,8 @@ export function customerBillingState(input: {
   if (input.planId === 'enterprise') return null;
   const atCap = input.spendCapCents > 0 && (input.warnPercent ?? 0) >= 100;
   const hardStop = input.spendCapCents <= 0 && input.meteredSpendCents > 0;
-  if (atCap || hardStop) return 'spend_cap';
+  if ((atCap || hardStop) && (!input.usesSeatBilling || input.costBearingPaused))
+    return 'spend_cap';
   if (input.costBearingPaused) return 'paused';
   return null;
 }

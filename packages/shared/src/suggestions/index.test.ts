@@ -247,6 +247,1050 @@ describe('suggestion scope', () => {
     expect(await db.select().from(entities)).toHaveLength(0);
   });
 
+  it('revalidates per-item citation audience inside manual acceptance even for its owner', async () => {
+    const sourceId = crypto.randomUUID();
+    const text = 'Start the confidential Northstar rollout.';
+    await db.insert(rawEvents).values({
+      id: sourceId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      contentText: text,
+      visibility: 'team',
+      authorUserId: USER_ID,
+      visibilityOwnerUserId: USER_ID,
+      occurredAt: new Date(),
+    });
+    const human = withTeam(db as never, TEAM_ID, USER_ID);
+    const proposal = await human.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Northstar rollout',
+      dedupeKey: sourceId,
+      evidence: [{ rawEventId: sourceId, quote: text }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Northstar rollout',
+          dedupeKey: `${sourceId}-project`,
+          evidenceRawEventIds: [sourceId],
+          proposedPayload: { type: 'project', canonicalName: 'Northstar rollout' },
+        },
+      ],
+    });
+    const [item] = proposal.items;
+    if (!item) throw new Error('Missing project proposal');
+    const narrowVisibility = vi.fn(async () => {
+      await db.update(rawEvents).set({ visibility: 'private' }).where(eq(rawEvents.id, sourceId));
+    });
+    const approval = withTeam(db as never, TEAM_ID, USER_ID, {
+      beforeSuggestionApply: narrowVisibility,
+    }).suggestions;
+    expect(await approval.acceptSuggestionItemWithOutcome(item.id)).toBe('superseded');
+    expect(narrowVisibility).toHaveBeenCalledTimes(1);
+    expect(await human.timeline.getEvent(sourceId)).toMatchObject({ visibility: 'private' });
+    expect(await db.select().from(entities)).toHaveLength(0);
+  });
+
+  it('automatically applies a pending team report once through the worker capability', async () => {
+    const sourceId = crypto.randomUUID();
+    const text = 'The login page is broken.';
+    await db.insert(rawEvents).values({
+      id: sourceId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      contentText: text,
+      visibility: 'team',
+      occurredAt: new Date('2026-06-01T12:00:00Z'),
+    });
+    const human = withTeam(db as never, TEAM_ID, USER_ID).suggestions;
+    const proposal = await human.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Broken login page',
+      dedupeKey: 'reported-login',
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: sourceId, quote: text }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Broken login page',
+          dedupeKey: 'reported-login-task',
+          proposedPayload: { canonicalName: 'Broken login page' },
+        },
+      ],
+    });
+    const [taskProposal] = proposal.items;
+    if (!taskProposal) throw new Error('Missing task proposal');
+    await db.execute(sql`UPDATE agent_suggestion_items
+      SET updated_at = TIMESTAMPTZ '2026-06-01 12:00:00.123456+00'
+      WHERE id = ${taskProposal.id}`);
+    await expect(human.applyPendingRecordMaintenance()).rejects.toThrow('worker capability');
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    const attempts = await Promise.all([
+      automation.applyPendingRecordMaintenance(),
+      automation.applyPendingRecordMaintenance(),
+    ]);
+    expect(attempts.reduce((total, count) => total + count, 0)).toBe(1);
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+    const [applied] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, taskProposal.id));
+    expect(applied).toMatchObject({
+      status: 'accepted',
+      resolvedByUserId: null,
+    });
+    expect(applied?.metadata).toMatchObject({
+      approval_decision: 'automatic',
+      approval_policy_revision: '0',
+    });
+    expect(await db.select().from(entities)).toContainEqual(
+      expect.objectContaining({
+        id: applied?.resultId,
+        canonicalName: 'Broken login page',
+        status: 'todo',
+        assigneeUserId: null,
+        dueAt: null,
+        plannedDate: null,
+      }),
+    );
+  });
+
+  it('applies a project and its dependent task without implicitly creating a project', async () => {
+    const sourceId = crypto.randomUUID();
+    const quote = 'Northstar is our rollout project. Fix the login page as part of Northstar.';
+    await db.insert(rawEvents).values({
+      id: sourceId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      visibility: 'team',
+      contentText: quote,
+      occurredAt: new Date(),
+    });
+    const human = withTeam(db as never, TEAM_ID, USER_ID).suggestions;
+    const bundle = await human.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Northstar rollout',
+      dedupeKey: sourceId,
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: sourceId, quote }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Fix login page',
+          dedupeKey: 'northstar-login',
+          evidenceRawEventIds: [sourceId],
+          proposedPayload: { canonicalName: 'Fix login page', createProjectName: 'Northstar' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Northstar',
+          dedupeKey: 'northstar-project',
+          evidenceRawEventIds: [sourceId],
+          proposedPayload: { canonicalName: 'Northstar', type: 'project' },
+        },
+      ],
+    });
+    const task = bundle.items.find((item) => item.targetKind === 'task');
+    if (!task) throw new Error('Missing task proposal');
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    expect(await automation.applyPendingRecordMaintenance([task.id])).toBe(0);
+    expect(await db.select().from(entities)).toHaveLength(0);
+    expect(await automation.applyPendingRecordMaintenance()).toBe(2);
+    const [edge] = await db.select().from(entityRelationships);
+    const rows = await db.select().from(entities);
+    expect(rows).toHaveLength(2);
+    expect(edge).toMatchObject({
+      kind: 'child',
+      fromEntityId: rows.find((row) => row.type === 'task')?.id,
+      toEntityId: rows.find((row) => row.type === 'project')?.id,
+    });
+  });
+
+  it('automatically creates hubs with defaults or grounded optional fields', async () => {
+    const sourceId = crypto.randomUUID();
+    const quote =
+      'Cedar and Birch are our customers. Northstar is underway. Southstar is our new project.';
+    const occurredAt = new Date();
+    await db.insert(rawEvents).values({
+      id: sourceId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      visibility: 'team',
+      contentText: quote,
+      occurredAt,
+    });
+    const human = withTeam(db as never, TEAM_ID, USER_ID).suggestions;
+    const bundle = await human.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Customers and rollout projects',
+      dedupeKey: sourceId,
+      confidence: 'high',
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: sourceId, quote }],
+      items: [
+        { type: 'company', canonicalName: 'Cedar' },
+        { type: 'company', canonicalName: 'Birch', assigneeUserId: USER_ID },
+        { type: 'project', canonicalName: 'Northstar', status: 'active' },
+        { type: 'project', canonicalName: 'Southstar', status: 'shipped' },
+      ].map((proposedPayload) => ({
+        operation: 'create',
+        targetKind: 'object',
+        title: proposedPayload.canonicalName,
+        dedupeKey: `${sourceId}-${proposedPayload.canonicalName}`,
+        evidenceRawEventIds: [sourceId],
+        proposedPayload,
+        ...(proposedPayload.canonicalName === 'Northstar'
+          ? {
+              taskFieldEvidence: {
+                status: {
+                  rawEventId: sourceId,
+                  assertedAt: occurredAt.toISOString(),
+                  value: 'active',
+                },
+              },
+            }
+          : {}),
+      })),
+    });
+    const automation = withTeam(db as never, TEAM_ID, PSEUDO_USER, {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    expect(await automation.applyPendingRecordMaintenance()).toBe(2);
+    const rows = await db.select().from(entities).orderBy(asc(entities.canonicalName));
+    expect(rows.map(({ canonicalName, status }) => ({ canonicalName, status }))).toEqual([
+      { canonicalName: 'Cedar', status: 'open' },
+      { canonicalName: 'Northstar', status: 'active' },
+    ]);
+    const items = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.suggestionId, bundle.id));
+    expect(
+      items
+        .filter((item) => item.status === 'pending')
+        .map((item) => item.title)
+        .sort(),
+    ).toEqual(['Birch', 'Southstar']);
+  });
+
+  it('requires optional task-create fields to have persisted evidence', async () => {
+    const rawEventId = crypto.randomUUID();
+    const assertedAt = new Date().toISOString();
+    const assignedTask = 'Fix account navigation';
+    const assigneeUserId = REVIEWER_ID;
+    const plannedDate = '2026-12-01';
+    const dueAt = '2026-12-02T00:00:00.000Z';
+    const quote =
+      'Reviewer will fix account navigation on December 1, due by December 2. Publish release notes. Update onboarding illustrations. Inspect backup retention. Compare hosting quotes. Review payroll permissions.';
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      visibility: 'team',
+      contentText: quote,
+      occurredAt: new Date(assertedAt),
+    });
+    const human = withTeam(db as never, TEAM_ID, USER_ID).suggestions;
+    const proposal = await human.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Navigation rollout work',
+      dedupeKey: rawEventId,
+      confidence: 'high',
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId, quote }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: assignedTask,
+          dedupeKey: `${rawEventId}-grounded`,
+          evidenceRawEventIds: [rawEventId],
+          proposedPayload: {
+            canonicalName: assignedTask,
+            assigneeUserId,
+            plannedDate,
+            dueAt,
+            priority: 2,
+          },
+          taskFieldEvidence: {
+            assigneeUserId: { rawEventId, assertedAt, value: assigneeUserId },
+            dueAt: { rawEventId, assertedAt, value: dueAt },
+          },
+          plannedDateEvidence: { rawEventId, assertedAt, value: plannedDate },
+        },
+        ...[
+          { canonicalName: 'Publish release notes', status: 'done' },
+          { canonicalName: 'Update onboarding illustrations', assigneeUserId },
+          { canonicalName: 'Inspect backup retention', dueAt },
+          { canonicalName: 'Compare hosting quotes', plannedDate },
+          { canonicalName: 'Review payroll permissions', ownerUserId: assigneeUserId, priority: 1 },
+        ].map((proposedPayload, index) => ({
+          operation: 'create' as const,
+          targetKind: 'task' as const,
+          title: proposedPayload.canonicalName,
+          dedupeKey: `${rawEventId}-unsupported-${index}`,
+          evidenceRawEventIds: [rawEventId],
+          proposedPayload,
+        })),
+      ],
+    });
+    const automation = withTeam(db as never, TEAM_ID, PSEUDO_USER, {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    const rows = await db.select().from(entities);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      canonicalName: assignedTask,
+      status: 'todo',
+      assigneeUserId,
+      plannedDate,
+      dueAt: new Date(dueAt),
+      priority: 2,
+    });
+    const items = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.suggestionId, proposal.id));
+    expect(items.filter((item) => item.status === 'pending')).toHaveLength(5);
+  });
+
+  it('applies grounded person, company and project updates but keeps unsupported siblings pending', async () => {
+    const human = withTeam(db as never, TEAM_ID, USER_ID);
+    const actor = { kind: 'user', userId: USER_ID } as const;
+    const person = await human.objects.createObject({
+      type: 'person',
+      canonicalName: 'Lee Example',
+      actor,
+    });
+    const company = await human.objects.createObject({
+      type: 'company',
+      canonicalName: 'Cedar',
+      actor,
+    });
+    const project = await human.objects.createObject({
+      type: 'project',
+      canonicalName: 'Northstar',
+      status: 'active',
+      actor,
+    });
+    const sourceId = crypto.randomUUID();
+    const occurredAt = new Date(Date.now() + 1000);
+    const quote =
+      'Rename Lee Example to “Lee Green”. Rename Cedar to “Cedar Labs”. Northstar is on hold.';
+    await db.insert(rawEvents).values({
+      id: sourceId,
+      teamId: TEAM_ID,
+      source: 'meeting',
+      occurredAt,
+      visibility: 'team',
+      contentText: quote,
+    });
+    const proposals = await human.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Confirmed record changes',
+      dedupeKey: sourceId,
+      confidence: 'high',
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: sourceId, quote }],
+      items: [
+        ...(
+          [
+            [person.id, 'canonicalName', 'Lee Green'],
+            [company.id, 'canonicalName', 'Cedar Labs'],
+            [project.id, 'status', 'on_hold'],
+          ] as const
+        ).map(([targetId, field, value]) => ({
+          operation: 'update' as const,
+          targetKind: 'object' as const,
+          targetId,
+          title: value,
+          dedupeKey: targetId,
+          evidenceRawEventIds: [sourceId],
+          proposedPayload: { [field]: value },
+          taskFieldEvidence: {
+            [field]: { rawEventId: sourceId, assertedAt: occurredAt.toISOString(), value },
+          },
+        })),
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: person.id,
+          title: 'Unverified profile change',
+          dedupeKey: 'unverified-profile',
+          proposedPayload: { metadata: { role: 'CEO' } },
+        },
+      ],
+    });
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    expect(await automation.applyPendingRecordMaintenance()).toBe(3);
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+    const rows = await db.select().from(entities);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: person.id, canonicalName: 'Lee Green', metadata: {} }),
+        expect.objectContaining({ id: company.id, canonicalName: 'Cedar Labs' }),
+        expect.objectContaining({ id: project.id, status: 'on_hold' }),
+      ]),
+    );
+    const items = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.suggestionId, proposals.id));
+    expect(items.filter((item) => item.status === 'accepted')).toHaveLength(3);
+    expect(items.find((item) => item.title === 'Unverified profile change')?.status).toBe(
+      'pending',
+    );
+    const appliedProject = items.find((item) => item.resultId === project.id);
+    expect(appliedProject?.metadata).not.toHaveProperty('task_update_undo_available');
+  });
+
+  it('creates customer, deal and follow-up records and applies grounded lifecycle fields', async () => {
+    const human = withTeam(db as never, TEAM_ID, USER_ID);
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    async function propose(
+      quote: string,
+      items: (
+        sourceId: string,
+        assertedAt: string,
+      ) => Parameters<typeof human.suggestions.createOrMergeSuggestionBundle>[0]['items'],
+    ) {
+      const sourceId = crypto.randomUUID();
+      const occurredAt = new Date(Date.now() + 60_000);
+      await db.insert(rawEvents).values({
+        id: sourceId,
+        teamId: TEAM_ID,
+        source: 'slack',
+        visibility: 'team',
+        contentText: quote,
+        occurredAt,
+      });
+      return human.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: quote,
+        dedupeKey: sourceId,
+        confidence: 'high',
+        metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+        evidence: [{ rawEventId: sourceId, quote }],
+        items: items(sourceId, occurredAt.toISOString()).map((item) => ({
+          ...item,
+          evidenceRawEventIds: [sourceId],
+        })),
+      });
+    }
+    await propose(
+      'Northstar is our customer. Track the Northstar rollout deal and follow up with procurement.',
+      () => [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Northstar',
+          dedupeKey: 'northstar-customer',
+          proposedPayload: { type: 'company', canonicalName: 'Northstar' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Northstar rollout',
+          dedupeKey: 'northstar-deal',
+          proposedPayload: { type: 'deal', canonicalName: 'Northstar rollout' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Follow up with procurement',
+          dedupeKey: 'northstar-followup',
+          proposedPayload: { type: 'follow_up', canonicalName: 'Follow up with procurement' },
+        },
+      ],
+    );
+    expect(await automation.applyPendingRecordMaintenance()).toBe(3);
+    const rows = await db.select().from(entities);
+    expect(rows.find((row) => row.type === 'company')?.canonicalName).toBe('Northstar');
+    const deal = rows.find((row) => row.type === 'deal');
+    const followUp = rows.find((row) => row.type === 'follow_up');
+    if (!deal || !followUp) throw new Error('Expected deal and follow-up');
+    expect(deal.status).toBe('open');
+    expect(followUp.status).toBe('todo');
+
+    await propose(
+      'The offer for Northstar rollout has been sent. The stage for Northstar rollout is negotiation. Follow up with procurement is completed.',
+      (rawEventId, assertedAt) => [
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: deal.id,
+          title: 'Advance Northstar',
+          dedupeKey: 'northstar-advance',
+          proposedPayload: { status: 'proposal', stage: 'negotiation' },
+          taskFieldEvidence: {
+            status: { rawEventId, assertedAt, value: 'proposal' },
+            stage: { rawEventId, assertedAt, value: 'negotiation' },
+          },
+        },
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: followUp.id,
+          title: 'Complete follow-up',
+          dedupeKey: 'northstar-complete-followup',
+          proposedPayload: { status: 'done' },
+          taskFieldEvidence: { status: { rawEventId, assertedAt, value: 'done' } },
+        },
+      ],
+    );
+    expect(await automation.applyPendingRecordMaintenance()).toBe(2);
+    expect(await human.objects.getObject(deal.id)).toMatchObject({
+      status: 'proposal',
+      stage: 'negotiation',
+    });
+    expect(await human.objects.getObject(followUp.id)).toMatchObject({
+      status: 'done',
+      plannedDate: null,
+    });
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+  });
+
+  it('does not auto-add a grounded relationship that would remove a primary project', async () => {
+    const human = withTeam(db as never, TEAM_ID, USER_ID);
+    const actor = { kind: 'user', userId: USER_ID } as const;
+    const prior = await human.objects.createObject({
+      type: 'project',
+      canonicalName: 'Old rollout',
+      actor,
+    });
+    const next = await human.objects.createObject({
+      type: 'project',
+      canonicalName: 'New rollout',
+      actor,
+    });
+    const task = await human.objects.createObject({
+      type: 'task',
+      canonicalName: 'Fix checkout',
+      parentObjectId: prior.id,
+      actor,
+    });
+    const id = crypto.randomUUID();
+    const quote = 'Fix checkout belongs to New rollout.';
+    await db.insert(rawEvents).values({
+      id,
+      teamId: TEAM_ID,
+      source: 'slack',
+      visibility: 'team',
+      contentText: quote,
+      occurredAt: new Date(Date.now() + 1000),
+    });
+    const payload = { fromEntityId: task.id, toEntityId: next.id, kind: 'child' };
+    await human.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: quote,
+      dedupeKey: id,
+      confidence: 'high',
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: id, quote }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: quote,
+          dedupeKey: id,
+          proposedPayload: payload,
+          evidenceRawEventIds: [id],
+          relationshipEvidence: {
+            rawEventIds: [id],
+            fromName: task.canonicalName,
+            toName: next.canonicalName,
+            payload,
+          },
+        },
+      ],
+    });
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+    const [unchanged] = await db
+      .select()
+      .from(entityRelationships)
+      .where(eq(entityRelationships.fromEntityId, task.id));
+    expect(unchanged).toMatchObject({ toEntityId: prior.id });
+    const [pending] = await db.select().from(agentSuggestionItems);
+    expect(pending?.status).toBe('pending');
+  });
+
+  it('leaves a proposal pending when its evidence becomes private before automation', async () => {
+    const sourceId = crypto.randomUUID();
+    const text = 'The checkout page is broken.';
+    await db.insert(rawEvents).values({
+      id: sourceId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      contentText: text,
+      visibility: 'team',
+      occurredAt: new Date(),
+    });
+    const human = withTeam(db as never, TEAM_ID, USER_ID).suggestions;
+    const pending = await human.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: text,
+      dedupeKey: sourceId,
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: sourceId, quote: text }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Broken checkout',
+          dedupeKey: sourceId,
+          proposedPayload: { canonicalName: 'Broken checkout' },
+        },
+      ],
+    });
+    const [pendingTask] = pending.items;
+    if (!pendingTask) throw new Error('Missing task proposal');
+    await db
+      .update(rawEvents)
+      .set({ visibility: 'private', visibilityOwnerUserId: USER_ID })
+      .where(eq(rawEvents.id, sourceId));
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+    const [item] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, pendingTask.id));
+    expect(item).toMatchObject({ status: 'pending', resultId: null });
+    expect(await db.select().from(entities)).toHaveLength(0);
+  });
+
+  for (const legacy of [false, true]) {
+    it(`does not require manual-value review for agent task defaults${legacy ? ' with legacy proof' : ''}`, async () => {
+      const human = withTeam(db as never, TEAM_ID, USER_ID);
+      const automation = withTeam(db as never, TEAM_ID, PSEUDO_USER, {
+        skipMembershipCheck: true,
+        recordMaintenanceWorker: true,
+      }).suggestions;
+      await human.suggestions.setRecordMaintenancePolicy({
+        reviewManualValues: true,
+        approveRemovals: false,
+        approveMerges: false,
+      });
+      const name = 'Check navigation rollout';
+      const now = Date.now();
+      async function propose(
+        occurredAt: Date,
+        text: string,
+        update?: { targetId: string; status: string; dueAt: string },
+      ) {
+        const rawEventId = crypto.randomUUID();
+        await db.insert(rawEvents).values({
+          id: rawEventId,
+          teamId: TEAM_ID,
+          source: 'slack',
+          contentText: text,
+          visibility: 'team',
+          occurredAt,
+        });
+        const assertedAt = occurredAt.toISOString();
+        const proposal = await human.suggestions.createOrMergeSuggestionBundle({
+          source: 'background',
+          title: text,
+          dedupeKey: rawEventId,
+          confidence: 'high',
+          metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+          evidence: [{ rawEventId, quote: text }],
+          items: [
+            {
+              operation: update ? 'update' : 'create',
+              targetKind: 'task',
+              title: name,
+              dedupeKey: rawEventId,
+              evidenceRawEventIds: [rawEventId],
+              ...(update ? { targetId: update.targetId } : {}),
+              proposedPayload: update
+                ? { status: update.status, dueAt: update.dueAt }
+                : { canonicalName: name },
+              ...(update
+                ? {
+                    taskFieldEvidence: {
+                      status: { rawEventId, assertedAt, value: update.status },
+                      dueAt: { rawEventId, assertedAt, value: update.dueAt },
+                    },
+                  }
+                : {}),
+            },
+          ],
+        });
+        const [item] = proposal.items;
+        if (!item) throw new Error('Missing task proposal');
+        return item.id;
+      }
+      const create = await propose(new Date(now - 120_000), 'Please check the navigation rollout.');
+      expect(await automation.applyPendingRecordMaintenance([create])).toBe(1);
+      const [task] = await db.select().from(entities);
+      if (!task) throw new Error('Missing task');
+      expect(task).toMatchObject({ canonicalName: name, status: 'todo', dueAt: null });
+      expect(task.recordFieldRevisions.status?.writeEventId).toEqual(expect.any(String));
+      expect(task.recordFieldRevisions.dueAt?.writeEventId).toEqual(expect.any(String));
+      if (legacy) {
+        const previousProof = { assertedAt: task.createdAt.toISOString(), rawEventId: null };
+        await db
+          .update(entities)
+          .set({
+            recordFieldRevisions: {
+              ...task.recordFieldRevisions,
+              status: { ...task.recordFieldRevisions.status, ...previousProof },
+              dueAt: { ...task.recordFieldRevisions.dueAt, ...previousProof },
+            },
+          })
+          .where(eq(entities.id, task.id));
+      }
+      const dueAt = '2026-12-08T00:00:00.000Z';
+      const first = await propose(
+        new Date(now - 60_000),
+        'Check navigation rollout is in progress, due by December 8.',
+        {
+          targetId: task.id,
+          status: 'doing',
+          dueAt,
+        },
+      );
+      expect(await automation.applyPendingRecordMaintenance([first])).toBe(1);
+      expect(await human.objects.getObject(task.id)).toMatchObject({
+        status: 'doing',
+        dueAt: new Date(dueAt),
+      });
+      const manualDueAt = new Date('2026-12-09T00:00:00.000Z');
+      await human.objects.updateObject(
+        task.id,
+        { status: 'blocked', dueAt: manualDueAt },
+        { kind: 'user', userId: USER_ID },
+      );
+      const second = await propose(
+        new Date(Date.now() + 60_000),
+        'Check navigation rollout is complete, due by December 10.',
+        {
+          targetId: task.id,
+          status: 'done',
+          dueAt: '2026-12-10T00:00:00.000Z',
+        },
+      );
+      expect(await automation.applyPendingRecordMaintenance([second])).toBe(0);
+      const [pending] = await db
+        .select()
+        .from(agentSuggestionItems)
+        .where(eq(agentSuggestionItems.id, second));
+      expect(pending?.status).toBe('pending');
+      expect(await human.objects.getObject(task.id)).toMatchObject({
+        status: 'blocked',
+        dueAt: manualDueAt,
+      });
+    });
+  }
+
+  it('reviews a manual plan when configured and only undoes the latest automatic edit', async () => {
+    const human = withTeam(db as never, TEAM_ID, USER_ID);
+    const actor = { kind: 'user', userId: USER_ID } as const;
+    const task = await human.objects.createObject({
+      type: 'task',
+      canonicalName: 'Investigate checkout error',
+      plannedDate: '2026-06-05',
+      actor,
+    });
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    async function propose(
+      value: string,
+      afterMs: number,
+      includeAssignee = false,
+      replaySourceId?: string,
+      echoedName = task.canonicalName,
+    ) {
+      const sourceId = replaySourceId ?? crypto.randomUUID();
+      const dedupe = replaySourceId ? `replay:${sourceId}` : sourceId;
+      let occurredAt = new Date(Date.now() + afterMs);
+      const text = `Investigate checkout error planned date is ${value}.`;
+      const [original] = replaySourceId
+        ? await db
+            .select({ occurredAt: rawEvents.occurredAt })
+            .from(rawEvents)
+            .where(eq(rawEvents.id, replaySourceId))
+        : [];
+      if (original) occurredAt = original.occurredAt;
+      else
+        await db.insert(rawEvents).values({
+          id: sourceId,
+          teamId: TEAM_ID,
+          source: 'slack',
+          contentText: text,
+          visibility: 'team',
+          occurredAt,
+        });
+      const bundle = await human.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: 'Plan checkout investigation',
+        dedupeKey: dedupe,
+        metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+        evidence: [{ rawEventId: sourceId, quote: text }],
+        items: [
+          {
+            operation: 'update',
+            targetKind: 'task',
+            targetId: task.id,
+            title: 'Investigate checkout error',
+            dedupeKey: dedupe,
+            proposedPayload: {
+              plannedDate: value,
+              canonicalName: echoedName,
+              ...(includeAssignee ? { assigneeUserId: USER_ID } : {}),
+            },
+            ...(includeAssignee
+              ? {
+                  taskFieldEvidence: {
+                    assigneeUserId: {
+                      rawEventId: sourceId,
+                      assertedAt: occurredAt.toISOString(),
+                      value: USER_ID,
+                    },
+                  },
+                }
+              : {}),
+            plannedDateEvidence: {
+              rawEventId: sourceId,
+              assertedAt: occurredAt.toISOString(),
+              value,
+            },
+          },
+        ],
+      });
+      const item = bundle.items[0];
+      if (!item) throw new Error('Missing proposed update');
+      return item.id;
+    }
+    await human.suggestions.setRecordMaintenancePolicy({
+      reviewManualValues: true,
+      approveRemovals: false,
+      approveMerges: false,
+    });
+    await propose('2026-06-05', 30_000);
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    const first = await propose('2026-06-08', 60_000);
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+    expect(await human.objects.getObject(task.id)).toMatchObject({ plannedDate: '2026-06-05' });
+    const policy = await human.suggestions.setRecordMaintenancePolicy({
+      reviewManualValues: false,
+      approveRemovals: false,
+      approveMerges: false,
+    });
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    const [applied] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, first));
+    expect(applied?.metadata).toMatchObject({
+      approval_policy_revision: policy.revision,
+      task_update_undo_available: true,
+    });
+    if (!applied) throw new Error('Missing accepted approval');
+    const [originalEvidence] = await db
+      .select({ rawEventId: agentSuggestionEvidence.rawEventId })
+      .from(agentSuggestionEvidence)
+      .where(eq(agentSuggestionEvidence.suggestionId, applied.suggestionId));
+    if (!originalEvidence) throw new Error('Missing accepted evidence');
+    expect(
+      (await human.suggestions.acceptedConversationTaskEvidence([originalEvidence.rawEventId]))
+        .plans,
+    ).toEqual([{ taskId: task.id, rawEventId: originalEvidence.rawEventId }]);
+    await human.objects.updateObject(task.id, { priority: 2 }, actor);
+    expect(await human.suggestions.undoAutomaticTaskUpdate(first)).toBe(true);
+    expect(await human.suggestions.undoAutomaticTaskUpdate(first)).toBe(true);
+    expect(await human.objects.getObject(task.id)).toMatchObject({
+      plannedDate: '2026-06-05',
+      priority: 2,
+    });
+    expect(await automation.applyPendingRecordMaintenance([first])).toBe(0);
+    expect(
+      (await human.suggestions.acceptedConversationTaskEvidence([originalEvidence.rawEventId]))
+        .plans,
+    ).toEqual([]);
+    const replay = await propose('2026-06-08', 0, false, originalEvidence.rawEventId);
+    expect(await automation.applyPendingRecordMaintenance([replay])).toBe(0);
+    const [replayedItem] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, replay));
+    expect(replayedItem?.status).toBe('superseded');
+    expect(await human.objects.getObject(task.id)).toMatchObject({ plannedDate: '2026-06-05' });
+    const second = await propose('2026-06-10', 120_000);
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    await human.objects.updateObject(task.id, { plannedDate: '2026-06-11' }, actor);
+    await human.objects.updateObject(task.id, { plannedDate: '2026-06-10' }, actor);
+    await expect(human.suggestions.undoAutomaticTaskUpdate(second)).rejects.toThrow(
+      'task field changed again',
+    );
+    expect(await human.objects.getObject(task.id)).toMatchObject({ plannedDate: '2026-06-10' });
+    const compound = await propose('2026-06-15', 180_000, true);
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    expect(await human.objects.getObject(task.id)).toMatchObject({
+      plannedDate: '2026-06-15',
+      assigneeUserId: USER_ID,
+    });
+    expect(await human.suggestions.undoAutomaticTaskUpdate(compound)).toBe(true);
+    expect(await human.objects.getObject(task.id)).toMatchObject({
+      plannedDate: '2026-06-10',
+      assigneeUserId: null,
+    });
+    const rename = await propose('2026-06-16', 240_000, false, undefined, 'Unverified rename');
+    expect(await automation.applyPendingRecordMaintenance([rename])).toBe(0);
+    expect(await human.objects.getObject(task.id)).toMatchObject({
+      canonicalName: 'Investigate checkout error',
+      plannedDate: '2026-06-10',
+    });
+  });
+
+  it('requires independent opt-ins for explicit archives and exact provider merges', async () => {
+    const human = withTeam(db as never, TEAM_ID, USER_ID);
+    const actor = { kind: 'user', userId: USER_ID } as const;
+    const archivedTask = await human.objects.createObject({
+      type: 'task',
+      canonicalName: 'Obsolete runbook',
+      actor,
+    });
+    const url = 'https://linear.app/example/issue/ENG-120/checkout';
+    const left = await human.objects.createObject({
+      type: 'incident',
+      canonicalName: 'First import',
+      metadata: {
+        url,
+        integration_provider: 'linear',
+        integration_external_id: 'fixture-identity',
+      },
+      actor,
+    });
+    const right = await human.objects.createObject({
+      type: 'incident',
+      canonicalName: 'Second import',
+      metadata: { url },
+      actor,
+    });
+    const sourceId = crypto.randomUUID();
+    const quote = 'Please move Obsolete runbook to the archive.';
+    await db.insert(rawEvents).values({
+      id: sourceId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      authorUserId: USER_ID,
+      contentText: quote,
+      occurredAt: new Date(),
+      visibility: 'team',
+    });
+    const archive = await human.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: quote,
+      dedupeKey: sourceId,
+      confidence: 'high',
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: sourceId, quote }],
+      items: [
+        {
+          operation: 'archive_or_cancel',
+          targetKind: 'task',
+          targetId: archivedTask.id,
+          title: quote,
+          dedupeKey: sourceId,
+          proposedPayload: {},
+        },
+      ],
+    });
+    const mergeSourceId = crypto.randomUUID();
+    const mergeQuote = 'Merge Second import into First import.';
+    await db.insert(rawEvents).values({
+      id: mergeSourceId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      authorUserId: USER_ID,
+      contentText: mergeQuote,
+      occurredAt: new Date(),
+      visibility: 'team',
+    });
+    const merge = await human.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Exact duplicate imports',
+      dedupeKey: 'exact-duplicate-imports',
+      confidence: 'high',
+      metadata: { cleanup_kind: 'merge' },
+      evidence: [{ rawEventId: mergeSourceId, quote: mergeQuote }],
+      items: [
+        {
+          operation: 'merge',
+          targetKind: 'object_merge',
+          targetId: left.id,
+          title: 'Exact duplicate imports',
+          dedupeKey: 'exact-duplicate-imports:merge',
+          proposedPayload: { objectIds: [left.id, right.id], survivorId: left.id },
+        },
+      ],
+    });
+    const [archiveItem] = archive.items;
+    const [mergeItem] = merge.items;
+    if (!archiveItem || !mergeItem) throw new Error('Missing archive or merge proposal');
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+    await human.suggestions.setRecordMaintenancePolicy({
+      reviewManualValues: false,
+      approveRemovals: true,
+      approveMerges: false,
+    });
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    const [archived] = await db.select().from(entities).where(eq(entities.id, archivedTask.id));
+    expect(archived?.archivedAt).toBeInstanceOf(Date);
+    const [pendingMerge] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, mergeItem.id));
+    expect(pendingMerge?.status).toBe('pending');
+    await human.suggestions.setRecordMaintenancePolicy({
+      reviewManualValues: false,
+      approveRemovals: false,
+      approveMerges: true,
+    });
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    const [merged] = await db.select().from(entities).where(eq(entities.id, right.id));
+    expect(merged?.mergedIntoId).toBe(left.id);
+    for (const itemId of [archiveItem.id, mergeItem.id]) {
+      const [accepted] = await db
+        .select()
+        .from(agentSuggestionItems)
+        .where(eq(agentSuggestionItems.id, itemId));
+      expect(accepted).toMatchObject({ status: 'accepted', resolvedByUserId: null });
+    }
+  });
+
   it('supersedes dependent email identities when their proposed person is rejected', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({

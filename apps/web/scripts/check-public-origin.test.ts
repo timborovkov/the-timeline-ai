@@ -36,8 +36,11 @@ function fixture(responses: Record<string, Response> = {}) {
         return redirect('/how-it-works');
       case '/solutions/weekly-project-updates':
         return redirect('/use-cases/team-daily-log');
+      case '/use-cases/work-record':
+        return redirect('/how-it-works');
+      case '/use-cases/crm':
       case '/solutions/crm-context-from-team-activity':
-        return redirect('/use-cases/crm');
+        return redirect('/use-cases/customer-context');
       default:
         if (/^\/compare\/(?:hubspot|jira|linear|notion)$/u.test(url.pathname)) {
           return redirect(url.pathname.replace('/compare/', '/integrations/'));
@@ -69,6 +72,7 @@ describe('post-deployment public origin check', () => {
         '/robots.txt': new Response('Sitemap: https://wrong.example/sitemap.xml\n'),
         '/trust': new Response('<link rel="canonical" href="https://wrong.example/trust">'),
         '/docs': redirect('https://wrong.example/help'),
+        '/solutions/crm-context-from-team-activity': redirect('/use-cases/crm'),
         '/llms.txt': new Response(
           buildLlmsTxt({ siteUrl: origin }).replace(
             `${origin}/pricing`,
@@ -82,6 +86,7 @@ describe('post-deployment public origin check', () => {
       expect.stringContaining('/docs — Expected 308'),
       expect.stringContaining('/llms.txt — LLM link mismatch'),
       expect.stringContaining('/robots.txt — robots Sitemap mismatch'),
+      expect.stringContaining('/solutions/crm-context-from-team-activity — Expected 308'),
       expect.stringContaining('/trust — Expected one canonical'),
     ]);
   });

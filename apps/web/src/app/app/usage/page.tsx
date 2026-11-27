@@ -1,4 +1,8 @@
-import { exhaustedFreeAllowanceNotice, resolveTeamCommercialTerms } from '@timeline/shared/billing';
+import {
+  exhaustedFreeAllowanceNotice,
+  resolveTeamCommercialTerms,
+  type BillingPresentation,
+} from '@timeline/shared/billing';
 import { withTeam } from '@timeline/shared/team-scope';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -10,6 +14,7 @@ import { BillingRestrictionNotice } from '@/components/billing-restriction-notic
 import { BillingStateBanner } from '@/components/billing-state-banner';
 import { BillingUsageSummary } from '@/components/billing-usage-summary';
 import { PageHeader } from '@/components/page-header';
+import { RegionalDate } from '@/components/regional-date';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -19,6 +24,19 @@ export const metadata: Metadata = {
   title: 'Usage',
   description: 'Metered usage for this workspace.',
 };
+
+function recordedCalendarMeterCharges(
+  planId: BillingPresentation['planId'],
+  presentation: BillingPresentation | null,
+): BillingPresentation['charges']['amounts'] | undefined {
+  if (planId !== 'free' && planId !== 'enterprise' && presentation?.paidSeats === undefined)
+    return undefined;
+  if (!presentation) return null;
+  const { charges, calendarPeriod } = presentation;
+  return charges.period?.start === calendarPeriod.start && charges.period.end === calendarPeriod.end
+    ? charges.amounts
+    : null;
+}
 
 export default async function UsagePage() {
   const { canManage, planId, dashboard, notice, state, commercial, capacityUsage } =
@@ -55,6 +73,21 @@ export default async function UsagePage() {
     );
   }
 
+  const { presentation } = dashboard;
+  const meterCards = (
+    <BillingUsageSummary
+      layout="cards"
+      usdCharges={presentation?.paidSeats !== undefined}
+      recordedCharges={recordedCalendarMeterCharges(planId, presentation)}
+      planId={planId}
+      allowanceBalances={presentation?.allowances}
+      comped={dashboard.account.arrangement === 'comped'}
+      meters={dashboard.meters}
+      capacityUsage={capacityUsage}
+      includedActiveMembers={commercial.includedActiveMembers}
+      additionalMemberCents={commercial.additionalMemberCents}
+    />
+  );
   return (
     <div className="space-y-8">
       <PageHeader
@@ -62,11 +95,7 @@ export default async function UsagePage() {
         title="Usage"
         metadata={[
           {
-            value: new Date(`${dashboard.periodYm}-01T00:00:00Z`).toLocaleDateString('en-GB', {
-              month: 'long',
-              year: 'numeric',
-              timeZone: 'UTC',
-            }),
+            value: <RegionalDate value={`${dashboard.periodYm}-01`} variant="month" />,
           },
         ]}
       >
@@ -81,29 +110,10 @@ export default async function UsagePage() {
       ) : notice ? (
         <UsageBillingNotice notice={notice} state={state} />
       ) : null}
-      {dashboard.presentation ? (
-        <BillingUsageOverview summary={dashboard.presentation}>
-          <BillingUsageSummary
-            layout="cards"
-            planId={planId}
-            allowanceBalances={dashboard.presentation.allowances}
-            comped={dashboard.account.arrangement === 'comped'}
-            meters={dashboard.meters}
-            capacityUsage={capacityUsage}
-            includedActiveMembers={commercial.includedActiveMembers}
-            additionalMemberCents={commercial.additionalMemberCents}
-          />
-        </BillingUsageOverview>
+      {presentation ? (
+        <BillingUsageOverview summary={presentation}>{meterCards}</BillingUsageOverview>
       ) : (
-        <BillingUsageSummary
-          layout="cards"
-          planId={planId}
-          comped={dashboard.account.arrangement === 'comped'}
-          meters={dashboard.meters}
-          capacityUsage={capacityUsage}
-          includedActiveMembers={commercial.includedActiveMembers}
-          additionalMemberCents={commercial.additionalMemberCents}
-        />
+        meterCards
       )}
     </div>
   );
@@ -150,6 +160,7 @@ async function loadUsagePage() {
     spendCapCents: dashboard.account.spendCapCents,
     meteredSpendCents: dashboard.meteredSpendCents,
     warnPercent: dashboard.utilization.percent,
+    usesSeatBilling: Boolean(dashboard.account.teamSeatTerms),
   });
   const notice = state ? BILLING_NOTICE_TITLE[state] : null;
   const capacityUsage = canManage ? await scope.billing.getCapacityUsage() : [];

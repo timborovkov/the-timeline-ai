@@ -9,6 +9,7 @@ import {
   type ConnectAgentKey,
 } from '@/components/connect-agent/mcp-outbound-key-list';
 import { CopyButton } from '@/components/copy-button';
+import { CopyableCodeValue } from '@/components/copyable-code-value';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -230,12 +231,11 @@ export function ConnectAgentAdvanced({
                 The plaintext for <span className="font-mono">{mintedKey.name}</span> is shown below
                 once. We store only the hash.
               </p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 break-all rounded-sm border border-border bg-surface-2 px-2 py-1.5 font-mono text-xs">
-                  {mintedKey.plaintext}
-                </code>
-                <CopyButton value={mintedKey.plaintext} />
-              </div>
+              <CopyableCodeValue
+                value={mintedKey.plaintext}
+                copyLabel="Copy MCP key"
+                valueClassName="rounded-sm border border-border bg-surface-2 px-2 py-1.5"
+              />
               <Button
                 size="sm"
                 variant="ghost"

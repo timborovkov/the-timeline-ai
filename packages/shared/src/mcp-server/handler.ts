@@ -668,7 +668,7 @@ const TOOLS: TimelineToolDefinition[] = [
     name: 'timeline.crawl',
     title: 'Scan a public website',
     description:
-      'Explicitly scan up to five public pages into team-visible evidence. Costs 20 source units per captured page, up to 100 per scan, plus AI and storage. Requires the user to confirm permission and paid usage. Never invoke automatically while searching.',
+      'Explicitly scan up to five public pages into team-visible evidence. On Free and Team, capture and ordinary storage are included within plan limits, and AI processing uses shared Included usage. Requires the user to confirm permission and usage. Never invoke automatically while searching.',
     inputSchema: crawlInput,
     outputSchema: z.looseObject({}),
     annotations: {
