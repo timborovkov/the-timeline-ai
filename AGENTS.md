@@ -1,10 +1,28 @@
 # Agent instructions
 
-This is the repository operating contract. Explicit user instructions take precedence. Use [the documentation index](docs/README.md) to find the owning reference before changing behavior.
+**The Timeline** connects the tools a team uses and keeps that activity together so people can ask what they need or open a view to explore it. Team members operate each workspace; the workspace owns captured activity, linked projects/people/tasks, visibility and proposed changes awaiting review. AI agents read the same record and contribute progress back through the MCP and plugin surface. Integrations and coworker connections are configurations of one product, not separate products.
+
+Hosting is multi-tenant at thetimeline.cc, with private self-hosting for an organisation’s own use. The stack is a Next.js web app, a Bun worker, PostgreSQL, Redis, Qdrant, S3-compatible storage and a shared OpenRouter inference layer in one repository. Read [the product brief](docs/product-brief.md) and [the memory engine](docs/relational-memory.md) for product and architecture decisions.
+
+Explicit user instructions take precedence over this file. Use [the documentation index](docs/README.md) to find the owning reference before changing behavior.
+
+## Documentation
+
+Most code changes do not need a documentation change. Agents can read the code.
+
+[The product brief](docs/product-brief.md) and [the memory engine](docs/relational-memory.md) own product and architecture decisions. Do not edit them without explicit permission, and do not start a second architecture document. [design.md](design.md) is the interface reference; intentional UI changes update it in the same change. [README.md](README.md) stays light: short product entry, pointers to setup and docs, no feature catalogs or architecture narration.
+
+`docs/` holds maintainer setup, testing, deployment and cross-cutting traps that are hard to discover from the source. Before adding a paragraph, ask whether a maintainer would get this wrong without it. If reading the relevant code answers the question, leave it out.
+
+Do not write feature catalogs; enumerate fields, methods, constants, timeouts or migration numbers; narrate control flow; maintain file catalogs; or append pull-request changelogs. Types, tests and code already record the implementation.
+
+A local reason the code cannot show goes in a short nearby comment. Use `docs/` when the reasoning crosses boundaries or needs context the code cannot carry well. Link to the relevant source instead of copying it.
+
+When a documented decision or constraint changes, rewrite or remove the affected text. Do not append another account of the new behavior. A new page needs a distinct, durable reason to exist.
+
+Keep `todo.md` open-only: remove completed items in the completing change. Never infer deployment, provider settings, legal approval or completed deletion from source code; keep unresolved evidence gaps explicit. Prefer Markdown for internal authoring. At handoff, apply `document-release` to affected docs and inbound links; a full documentation audit only when asked or when a concrete cross-cutting change requires one.
 
 ## Validation and delivery
-
-- Follow [CONTRIBUTING.md](CONTRIBUTING.md) for human-owned branches, simple PR titles/descriptions, and the required Codex review loop.
 
 - Shared compiler options live in `tsconfig.base.json`. Preserve `erasableSyntaxOnly`: no enums, value namespaces, constructor parameter properties, or `import =` / `export =`. Keep existing target/lib versions; add `verbatimModuleSyntax` only for a demonstrated need. Typecheck uses `bun check` (TypeScript 7 semantics). Emit uses `tsc` from `@typescript/native` (`typescript@7.0.2`). The `typescript` package name stays on `@typescript/typescript6` for compiler-API consumers (`typescript-eslint`, test AST helpers) until those peers accept TypeScript 7.
 - Use Bun pinned by `.bun-version`; no npm, pnpm or yarn. Install with `bun run deps`.
@@ -14,14 +32,27 @@ This is the repository operating contract. Explicit user instructions take prece
 - React Doctor verification requires both score 100 and “No issues found”; an exit code without a score is insufficient.
 - Application execution and tests use Bun. Record necessary analyzer/build exceptions in validation evidence, not as product instructions.
 
-## Documentation ownership
+## Pull requests
 
-- Update the owning current contract when behavior changes; link to it elsewhere instead of copying rules, lists or status.
-- Keep `todo.md` open-only. Remove completed items in the completing change, preserving any genuinely unfinished subtask. Git/PR/CI retain routine completion history.
-- Do not append test pass counts, branch merges or review-cycle narratives to current docs. Preserve unique dated external evidence separately from instructions.
-- At handoff, apply `document-release` to affected docs and inbound links. A full documentation audit is required only when explicitly requested or when a concrete cross-cutting change requires one.
-- Never infer deployment, provider settings, legal approval or completed deletion from source code. Keep unresolved evidence gaps explicit.
-- Prefer Markdown for internal authoring. Runtime email HTML and distributed product skills are product artifacts, not prose-cleanup targets.
+Never open a pull request unless the developer explicitly asks.
+
+Run `git remote get-url origin` before the first forge command and use that host's CLI. When the remote is GitHub, that CLI is `gh`.
+
+Branch names are `<owner>/<type>/<description>`. The owner is the responsible contributor, whichever tool writes the code. Titles are `<type>: <clear outcome>` in plain language, for example `fix: prevent duplicate invitations`.
+
+The body states the problem in a sentence or two, then how it was fixed. When an agent did the work, end with the model and harness. Use the [pull request template](.github/pull_request_template.md) for verification. Before marking ready, review the current diff against its target branch, resolve actionable findings, rerun affected checks, and review new commits again. Record the reviewed commit and result. Do not treat an incomplete review as a pass.
+
+UI changes need before/after images. Motion or timing changes need a short video. Upload that evidence on the pull request. Do not commit screenshots or other assets that exist only for review.
+
+One request is one pull request. Split only when asked. Outside contributions follow [CONTRIBUTING.md](CONTRIBUTING.md).
+
+When babysitting a pull request, act on what is new and end the turn. Do not poll or sleep. Verify each bot finding against the source, fix real ones, and dismiss false positives with a written reason. Stay quiet when nothing is new. Stop when required checks are green on the latest commit.
+
+## Plans and work artifacts
+
+Do not commit implementation plans, research notes, or agent scratch files. Keep temporary material outside the worktree.
+
+Track active maintainer work in its GitHub issue. External proposals use the contribution proposal in [CONTRIBUTING.md](CONTRIBUTING.md). A merged pull request is the implementation record.
 
 ## Non-negotiable boundaries
 
