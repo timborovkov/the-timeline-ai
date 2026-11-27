@@ -327,6 +327,9 @@ describe('fallbackBundles', () => {
     'I will send the contract tomorrow. This task was cancelled.',
     'I will send the offer tomorrow. Actually, I will not send it.',
     'I will send the offer tomorrow. The offer was cancelled.',
+    'I will send the report, maybe tomorrow.',
+    'I will send the report, maybe next Friday.',
+    'I will send the report, notify me if it slips tomorrow.',
     'Training example:\nI will send the contract tomorrow.',
     'Decision: still pending. Nobody has chosen a supplier.',
     'For reference only: ENG-42. It was closed last week. No action is requested.',
@@ -408,6 +411,15 @@ describe('fallbackBundles', () => {
     verifyEventLocalPlans([retained], source);
     expect(retained.items[0]?.proposedPayload).toHaveProperty('plannedDate', '2026-05-28');
     expect(retained.items[0]?.proposedPayload).not.toHaveProperty('dueAt');
+    const expanded = draft('Send welcome pack to Juniper');
+    verifyEventLocalPlans([expanded], {
+      ...source,
+      text: 'Our new client is Juniper. I will send the welcome pack tomorrow.',
+    });
+    expect(expanded.items[0]).toMatchObject({
+      title: 'Send the welcome pack',
+      proposedPayload: { canonicalName: 'Send the welcome pack', plannedDate: '2026-05-28' },
+    });
     const denied = draft('Send the brief to Evan');
     verifyEventLocalPlans([denied], {
       ...source,

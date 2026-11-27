@@ -1237,7 +1237,11 @@ export function fallbackBundles(args: {
       )
     )
       continue;
-    const commitment = fallbackCommitmentBundle(args, text);
+    const commitment = fallbackCommitmentBundle(args, primaryDirective);
+    if (commitment && primaryDirective !== text) {
+      commitment.quote = truncate(text, 500);
+      commitment.summary = truncate(text, 500);
+    }
     if (!commitment) continue;
     const action = commitment.items[0]?.title;
     const later = clauses.slice(index + 1).join(' ');
@@ -1363,7 +1367,26 @@ export function verifyEventLocalPlans(
       .trim();
   const title = normalizeAction(itemCanonicalName(task));
   const action = normalizeAction(plan.title);
-  if (title !== action) return;
+  if (title !== action) {
+    // A model may expand a literal commitment with a recipient from nearby
+    // context. Use the supported action as the new task's name only when it
+    // occurs once and no other proposal depends on the expanded name.
+    const recipient = title.startsWith(action + ' to ') ? title.slice(action.length + 4) : '';
+    const originalName = itemCanonicalName(task);
+    if (
+      !recipient ||
+      !evidenceNamePattern([recipient]).test(evidence.text) ||
+      /\b(?:not|never|except|instead|unrelated|different|another)\b/i.test(evidence.text) ||
+      Array.from(normalizeAction(evidence.text).matchAll(evidenceNamePattern([action]))).length !==
+        1 ||
+      items.some(
+        (item) => item !== task && Object.values(item.proposedPayload).includes(originalName),
+      )
+    )
+      return;
+    task.title = plan.title;
+    task.proposedPayload.canonicalName = plan.title;
+  }
   const payload = task.proposedPayload;
   payload.plannedDate = plan.proposedPayload.plannedDate;
   if (typeof payload.dueAt === 'string' && !/\b(?:due|deadline|before|by)\b/i.test(evidence.text)) {
