@@ -1149,6 +1149,7 @@ function shouldUseCommitmentFallback(args: {
 function fallbackDecisionBundle(
   text: string,
   confirmedHeading: boolean,
+  restoreTitles: (value: string) => string,
 ): SuggestionBundleOutput | null {
   const match = DECISION_PATTERN.exec(text.trim());
   const heading = confirmedHeading ? /^decision:\s*([^.!?]+)/i.exec(text.trim())?.[1] : undefined;
@@ -1160,8 +1161,9 @@ function fallbackDecisionBundle(
     /\b(?:pending|undecided|unresolved|maybe|whether|proposed|not final)\b/i.test(heading)
   )
     return null;
-  if (!decision) return null;
-  const canonicalName = `${decision.charAt(0).toUpperCase()}${decision.slice(1)}`;
+  if (!decision || decision.startsWith('\uE000')) return null;
+  const canonicalName = restoreTitles(`${decision.charAt(0).toUpperCase()}${decision.slice(1)}`);
+  text = restoreTitles(text);
   const payload: Record<string, unknown> = {
     type: 'decision',
     canonicalName: truncate(canonicalName, 200),
@@ -1199,8 +1201,25 @@ export function fallbackBundles(args: {
   occurredAt: Date;
   authorUserId: string | null;
 }): SuggestionBundleOutput[] {
-  // Isolate quoted speech before splitting, including quotes spanning a sentence.
-  const unquoted = args.text.replace(/"[^"]*(?:"|$)|“[^”]*(?:”|$)|`[^`]*(?:`|$)/g, '\uFFFC');
+  // Parse the assertion outside the quotes. Restore inline titles only in the output
+  // so words inside a title cannot supply a commitment, time, or decision.
+  const titles: string[] = [];
+  const unquoted = args.text
+    .replace(/[\uE000\uE001]/g, '\uFFFC')
+    .replace(/"[^"]*(?:"|$)|“[^”]*(?:”|$)|`[^`]*(?:`|$)/g, (quoted, offset: number) => {
+      if (
+        !quoted.endsWith(quoted.startsWith('“') ? '”' : '"') ||
+        !/[ \t]/.test(args.text[offset - 1] ?? '') ||
+        quoted.length > 122 ||
+        !/^["“][\p{L}\p{N}](?:[\p{L}\p{M}\p{N} '&’/–-]|\.(?=[\p{L}\p{N}]))*["”]$/u.test(quoted)
+      )
+        return '\uFFFC';
+      const index = titles.length;
+      titles.push(quoted);
+      return `\uE000${index}\uE001`;
+    });
+  const restoreTitles = (value: string) =>
+    value.replace(/\uE000(\d+)\uE001/g, (_, index: string) => titles[Number(index)] ?? '');
   const clauses = unquoted.trim().split(/(?<=[.!?;])\s+(?!(?:and|then|also)\s)|\n+/i);
   const bundles: SuggestionBundleOutput[] = [];
   // A later explicit retraction makes a rule-based attribution unsafe.
@@ -1224,7 +1243,7 @@ export function fallbackBundles(args: {
       /^(?:the (?:vote|decision) is final|(?:it was |we )?(?:approved|confirmed)(?: it)?)\s*[.!]?$/i.test(
         clauses[index + 1]?.trim() ?? '',
       );
-    const decision = fallbackDecisionBundle(text, confirmedHeading);
+    const decision = fallbackDecisionBundle(text, confirmedHeading, restoreTitles);
     if (decision && !text.endsWith('?')) bundles.push(decision);
     const primaryDirective = text
       .replace(/,\s*(?:ping|tell|notify|message) me if\b.*$/i, '')
@@ -1238,10 +1257,10 @@ export function fallbackBundles(args: {
       )
     )
       continue;
-    const commitment = fallbackCommitmentBundle(args, primaryDirective);
+    const commitment = fallbackCommitmentBundle(args, primaryDirective, restoreTitles);
     if (commitment && primaryDirective !== text) {
-      commitment.quote = truncate(text, 500);
-      commitment.summary = truncate(text, 500);
+      commitment.quote = truncate(restoreTitles(text), 500);
+      commitment.summary = commitment.quote;
     }
     if (!commitment) continue;
     const action = commitment.items[0]?.title;
@@ -1257,13 +1276,15 @@ export function fallbackBundles(args: {
           (match) =>
             match[1] &&
             evidenceNamePattern([action, verb + ' it', verb + ' that', verb + ' them']).test(
-              match[1],
+              restoreTitles(match[1]),
             ),
         ) ||
         Array.from(cancelled).some(
           (match) =>
             match[1] &&
-            evidenceNamePattern(['it', 'that', 'this task', object.join(' ')]).test(match[1]),
+            evidenceNamePattern(['it', 'that', 'this task', object.join(' ')]).test(
+              restoreTitles(match[1]),
+            ),
         )
       )
         continue;
@@ -1276,6 +1297,7 @@ export function fallbackBundles(args: {
 function fallbackCommitmentBundle(
   args: { timezone: string; occurredAt: Date; authorUserId: string | null },
   text: string,
+  restoreTitles: (value: string) => string,
 ): SuggestionBundleOutput | null {
   const match = COMMITMENT_TIME_PATTERN.exec(text);
   if (match) {
@@ -1286,13 +1308,13 @@ function fallbackCommitmentBundle(
       .replace(/\s+/g, ' ')
       .trim();
     const phrase = match[2] ?? 'tomorrow';
-    if (!action || text.endsWith('?')) return null;
+    if (!action || action.startsWith('\uE000') || text.endsWith('?')) return null;
     const resolved = time.resolveTimePhrase(phrase, {
       timezone: args.timezone,
       referenceDate: args.occurredAt,
     });
     const taskPayload: Record<string, unknown> = {
-      canonicalName: `${action.charAt(0).toUpperCase()}${action.slice(1)}`,
+      canonicalName: restoreTitles(`${action.charAt(0).toUpperCase()}${action.slice(1)}`),
       ...(resolved
         ? isDeadline
           ? { dueAt: resolved.from.toISOString() }
@@ -1301,6 +1323,7 @@ function fallbackCommitmentBundle(
       ownerUserId: args.authorUserId,
       metadata: { extracted_from_commitment: true, time_phrase: phrase },
     };
+    text = restoreTitles(text);
     const items: z.infer<typeof suggestionItemSchema>[] = [
       {
         operation: 'create',
@@ -1319,8 +1342,10 @@ function fallbackCommitmentBundle(
     };
   }
 
-  const messyTitle = messyCommitmentTitle(text);
-  if (!messyTitle) return null;
+  const parsedTitle = messyCommitmentTitle(text);
+  if (!parsedTitle) return null;
+  const messyTitle = restoreTitles(parsedTitle);
+  text = restoreTitles(text);
   return {
     title: `Commitment: ${messyTitle}`,
     summary: truncate(text, 500),
@@ -1640,6 +1665,7 @@ interface RepairRelationshipCandidate {
   factCount: number;
   rawEventId: string;
   statement: string;
+  factStatements: string[];
   source: 'fact' | 'connected_work';
 }
 
@@ -1898,6 +1924,7 @@ async function repairRelationshipCandidates(
       type: entities.type,
       aliases: entities.aliases,
       factId: factsTable.id,
+      factStatement: factsTable.statement,
       rawEventId: factsTable.rawEventId,
       statement: rawEvents.contentText,
       extractedAt: factsTable.extractedAt,
@@ -1932,6 +1959,7 @@ async function repairRelationshipCandidates(
     const existing = candidates.get(row.id);
     if (existing) {
       existing.factIds.add(row.factId);
+      if (row.rawEventId === existing.rawEventId) existing.factStatements.push(row.factStatement);
       continue;
     }
     candidates.set(row.id, {
@@ -1942,6 +1970,7 @@ async function repairRelationshipCandidates(
       rawEventId: row.rawEventId,
       statement: row.statement,
       factIds: new Set([row.factId]),
+      factStatements: [row.factStatement],
     });
   }
   return Array.from(candidates.values())
@@ -1953,6 +1982,7 @@ async function repairRelationshipCandidates(
       rawEventId: candidate.rawEventId,
       statement: candidate.statement,
       factCount: candidate.factIds.size,
+      factStatements: candidate.factStatements,
       source: 'fact' as const,
     }))
     .sort(
@@ -2015,6 +2045,7 @@ async function repairConnectedWorkRelationshipCandidates(
       factCount: 1,
       rawEventId: row.rawEventId,
       statement: row.statement,
+      factStatements: [],
       source: 'connected_work',
     });
   }
@@ -2131,26 +2162,45 @@ async function supportedRepairRelationships(
   io: SuggestionWorkerIO,
 ) {
   const names = objectNamesForRepair(object);
-  const claims = candidates.map((candidate) => ({
-    claim: JSON.stringify({
-      selected: { type: object.type, names },
-      related: { type: candidate.type, names: objectNamesForRepair(candidate) },
-    }),
-    rawEventId: candidate.rawEventId,
-    text: candidate.statement.slice(0, 6000),
-    names,
-  }));
+  const claims = candidates.flatMap((candidate) => {
+    const relatedNames = objectNamesForRepair(candidate);
+    const passages = repairEvidencePassages(
+      [
+        {
+          rawEventId: candidate.rawEventId,
+          text: candidate.statement,
+          factStatements: candidate.factStatements,
+        },
+      ],
+      relatedNames,
+    );
+    return passages.map(({ rawEventId, text }) => ({
+      candidate,
+      rawEventId,
+      text,
+      names,
+      claim: JSON.stringify({
+        selected: { type: object.type, names },
+        related: { type: candidate.type, names: relatedNames },
+      }),
+    }));
+  });
   const quotes = await supportedClaimQuotes(
     claims,
     'Verify a meaningful affirmative relationship between these specific records. Resolve names in context. An item title can establish the relationship when it identifies who the work is for. A calendar month that matches a company name, co-attachment to a fact, or an explicit denial is insufficient. The passage must identify both endpoints.',
     io,
   );
-  return candidates.flatMap((candidate, index) => {
-    const quote = quotes.get(index);
-    return quote && textMentionsAnyValue(quote, objectNamesForRepair(candidate))
-      ? [{ ...candidate, statement: quote }]
-      : [];
-  });
+  const supported = new Map<string, RepairRelationshipCandidate>();
+  for (const [index, quote] of quotes) {
+    const candidate = claims[index]?.candidate;
+    if (
+      candidate &&
+      !supported.has(candidate.id) &&
+      evidenceNamePattern(objectNamesForRepair(candidate)).test(quote)
+    )
+      supported.set(candidate.id, { ...candidate, statement: quote });
+  }
+  return [...supported.values()];
 }
 
 const repairPersonSchema = z.object({
@@ -2723,8 +2773,19 @@ async function qualifyPersonAndProjectCreates(
   bundles: SuggestionBundleOutput[],
   anchor: { rawEventId: string; contentText: string },
   pack: evidencePacks.EvidencePack | null,
+  findByName: ReturnType<typeof withTeam>['objects']['findActiveObjectsByNameOrAlias'],
   io: SuggestionWorkerIO,
 ) {
+  const identities = new Map<string, Awaited<ReturnType<typeof findByName>>>();
+  async function uniqueObject(type: 'person' | 'project', name: string) {
+    const key = type + ':' + name.trim().toLowerCase();
+    let rows = identities.get(key);
+    if (!rows) {
+      rows = await findByName(type, name);
+      identities.set(key, rows);
+    }
+    return rows.length === 1 ? rows[0] : undefined;
+  }
   const claims: EvidenceClaim[] = [];
   const claimsByItem = new Map<SuggestionItemOutput, number[]>();
   for (const { items } of bundles)
@@ -2741,18 +2802,40 @@ async function qualifyPersonAndProjectCreates(
         ? pack.items.filter((source) => ids.includes(source.rawEventId))
         : [anchor];
       const indexes: number[] = [];
+      const claimedType = objectCreate && type === 'person' ? 'person' : 'project';
       for (const source of sources) {
-        const match = evidenceNamePattern([name]).exec(source.contentText);
+        let sourceNames = [name];
+        let match = evidenceNamePattern(sourceNames).exec(source.contentText);
+        if (!match) {
+          const record = await uniqueObject(claimedType, name);
+          const subject = {
+            id: 'candidate',
+            type: claimedType,
+            canonicalName: name,
+            metadata: objectCreate ? item.proposedPayload.metadata : undefined,
+          };
+          if (!record || !suggestions.identityMatchReason(subject, record)) continue;
+          sourceNames = [];
+          for (const alias of new Set(rawCleanupNames(record))) {
+            if (
+              evidenceNamePattern([alias]).test(source.contentText) &&
+              (await uniqueObject(claimedType, alias))?.id === record.id
+            )
+              sourceNames.push(alias);
+          }
+          match = evidenceNamePattern(sourceNames).exec(source.contentText);
+        }
         if (!match) continue;
         const position = match.index;
         const offset = Math.max(0, position - 2000);
         indexes.push(claims.length);
         claims.push({
           claim: JSON.stringify({
-            type: objectCreate ? type : 'project',
+            type: claimedType,
             name,
+            ...(sourceNames[0] !== name ? { registeredNames: sourceNames } : {}),
           }),
-          names: [name],
+          names: sourceNames,
           rawEventId: source.rawEventId,
           text: source.contentText.slice(offset, offset + 6000),
         });
@@ -2761,7 +2844,7 @@ async function qualifyPersonAndProjectCreates(
     }
   const quotes = await supportedClaimQuotes(
     claims,
-    'Decide whether the source identifies the proposed canonical name as the claimed type. For a person require an identifiable human in context, such as a named contact, participant or author. For a project require a concrete initiative the team is delivering or tracking. A file title, inventory entry or document about an initiative is insufficient by itself. Apostrophe and dash typography may differ between the proposed name and source. Return the original source punctuation in the quote. Capitalization alone supplies no identity.',
+    'Decide whether the source identifies the proposed canonical name or a supplied registered name as the claimed type. For a person require an identifiable human in context, such as a named contact, participant or author. For a project require a concrete initiative the team is delivering or tracking. A file title, inventory entry or document about an initiative is insufficient by itself. Apostrophe and dash typography may differ between the proposed name and source. Return the original source punctuation in the quote. Capitalization alone supplies no identity.',
     io,
   );
   for (const bundle of bundles) {
@@ -5375,6 +5458,7 @@ async function runSuggestionExtraction(
       modelBundles,
       { rawEventId, contentText: text },
       evidencePackEnforced ? evidencePack : null,
+      scope.objects.findActiveObjectsByNameOrAlias,
       io,
     );
     if (!args.document && !args.repairObjectId && !args.conversation && !evidencePackEnforced)

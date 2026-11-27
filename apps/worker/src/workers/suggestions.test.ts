@@ -422,6 +422,10 @@ describe('fallbackBundles', () => {
     'For reference only: ENG-42. It was closed last week. No action is requested.',
     'ENG-42 is in the archive.',
     'Training example: "I will send the contract tomorrow." No one has agreed to send it.',
+    'Training example: We decided to use "Cedar" as the shipping provider.',
+    'Mira wrote “I will send the Quarterly Report tomorrow.”',
+    'I will send “Notes for tomorrow” to the team.',
+    'We decided to use "Cedar as the shipping provider.',
     'Mira said I will send the contract tomorrow.',
     "I'll review the pricing. Mira goes on leave tomorrow.",
     'I will not send the contract tomorrow.',
@@ -440,6 +444,16 @@ describe('fallbackBundles', () => {
   });
 
   it.each([
+    [
+      'We decided to use "Cedar" as the shipping provider.',
+      ['Use "Cedar" as the shipping provider'],
+    ],
+    ['I will send the “Quarterly Report” tomorrow.', ['Send the “Quarterly Report”']],
+    [
+      'I will send the report tomorrow. Mira wrote “I will not send it” in the notes.',
+      ['Send the report'],
+    ],
+    ['I will send the “Q4.v2.pdf” tomorrow.', ['Send the “Q4.v2.pdf”']],
     [
       'Decision: use Larch as the shipping provider. The vote is final.',
       ['Use Larch as the shipping provider'],
@@ -2840,6 +2854,7 @@ describe('processSuggestionJobForTests', () => {
       ])
       .returning({ id: entities.id });
     if (!company || !person) throw new Error('expected object fixtures');
+    const quote = 'Newer note: Jonne from DFK owns the pilot follow-up.';
     const olderRawId = '00000000-0000-4000-8000-000000000010';
     const newerRawId = '00000000-0000-4000-8000-000000000020';
     const deletedRawId = '00000000-0000-4000-8000-000000000030';
@@ -2859,8 +2874,13 @@ describe('processSuggestionJobForTests', () => {
           id: newerRawId,
           teamId: TEAM_ID,
           authorUserId: OWNER_ID,
-          source: 'web',
-          contentText: 'Newer note: Jonne from DFK owns the pilot follow-up.',
+          source: 'integration',
+          contentText:
+            'Jonne checked the notes. ' +
+            'Filed. '.repeat(1100) +
+            quote +
+            ' Archived.'.repeat(900) +
+            ' Jonne signed off.',
           occurredAt: new Date('2026-06-18T10:00:00.000Z'),
           visibility: 'team',
         },
@@ -2891,7 +2911,7 @@ describe('processSuggestionJobForTests', () => {
         {
           teamId: TEAM_ID,
           rawEventId: newerRaw.id,
-          statement: 'Newer fact: Jonne from DFK owns the pilot follow-up.',
+          statement: 'Jonne from DFK owns the pilot follow-up.',
           confidence: 0.9,
           modelVersion: 'test',
           extractedAt: new Date('2026-06-18T10:00:00.000Z'),
@@ -2919,12 +2939,17 @@ describe('processSuggestionJobForTests', () => {
     const review = {
       getEnv: () => ({ IDENTITY_SEMANTIC_ENABLED: true, OPENROUTER_API_KEY: 'test-key' }) as never,
       identityEvidence: () => Promise.resolve([]),
-      reviewProposalEvidence: vi.fn().mockResolvedValue({
-        model: MODEL_ID,
-        object: {
-          supported: [{ index: 0, quote: 'Newer note: Jonne from DFK owns the pilot follow-up.' }],
-        },
-      }),
+      reviewProposalEvidence: vi.fn(({ prompt }: { prompt: string }) => {
+        const passages = JSON.parse(prompt) as { index: number; source: string }[];
+        return Promise.resolve({
+          model: MODEL_ID,
+          object: {
+            supported: passages
+              .filter(({ source }) => source.includes(quote))
+              .map(({ index }) => ({ index, quote })),
+          },
+        });
+      }) as typeof llm.chatStructured,
     };
     await processSuggestionJobForTests(
       { db: db as never },
@@ -2945,7 +2970,7 @@ describe('processSuggestionJobForTests', () => {
       evidence: [
         expect.objectContaining({
           rawEventId: newerRaw.id,
-          quote: 'Newer note: Jonne from DFK owns the pilot follow-up.',
+          quote,
         }),
       ],
       confidence: 'medium',
@@ -3002,7 +3027,7 @@ describe('processSuggestionJobForTests', () => {
     });
     expect(output.sourceRefs).toEqual([
       expect.objectContaining({
-        source: 'web',
+        source: 'integration',
         rawEventId: newerRaw.id,
       }),
     ]);
@@ -3137,6 +3162,105 @@ describe('processSuggestionJobForTests', () => {
     );
     expect(await db.select().from(agentSuggestionItems)).toEqual([]);
   });
+
+  it.each([false, true])(
+    'qualifies canonical names through registered aliases (ambiguous project alias: %s)',
+    async (ambiguous) => {
+      const projectId = crypto.randomUUID();
+      const personId = crypto.randomUUID();
+      await db.insert(entities).values([
+        {
+          id: projectId,
+          teamId: TEAM_ID,
+          type: 'project',
+          canonicalName: 'Customer Portal',
+          aliases: ['PBC-portaali'],
+        },
+        {
+          id: personId,
+          teamId: TEAM_ID,
+          type: 'person',
+          canonicalName: 'Mira Korpi',
+          aliases: ['MK'],
+        },
+      ]);
+      if (ambiguous)
+        await db.insert(entities).values({
+          teamId: TEAM_ID,
+          type: 'project',
+          canonicalName: 'Customer Console',
+          aliases: ['PBC-portaali'],
+        });
+      const rawEventId = crypto.randomUUID();
+      const quote = 'MK leads delivery of our active PBC-portaali project.';
+      await seedRawEvent(db as never, {
+        id: rawEventId,
+        text: quote,
+        source: 'ingest_webhook',
+        sourceMetadata: { extracted_at: REFERENCE_DATE.toISOString() },
+      });
+      const chat = vi.fn().mockResolvedValue({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: 'Portal delivery',
+              confidence: 'high',
+              quote,
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'object',
+                  title: 'Customer Portal',
+                  proposedPayload: {
+                    type: 'project',
+                    canonicalName: 'Customer Portal',
+                    localRef: 'portal',
+                    status: 'active',
+                  },
+                },
+                {
+                  operation: 'create',
+                  targetKind: 'object',
+                  title: 'Mira Korpi',
+                  proposedPayload: {
+                    type: 'person',
+                    canonicalName: 'Mira Korpi',
+                    localRef: 'lead',
+                    ownerName: 'Member',
+                  },
+                },
+                {
+                  operation: 'create',
+                  targetKind: 'object_relationship',
+                  title: 'Link project and lead',
+                  proposedPayload: { kind: 'related', fromRef: 'portal', toRef: 'lead' },
+                },
+              ],
+            },
+          ],
+        },
+      });
+      await processSuggestionJobForTests(
+        { db: db as never },
+        { teamId: TEAM_ID, rawEventId },
+        { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+      );
+      const items = await db.select().from(agentSuggestionItems);
+      expect(items.some((item) => item.targetId === personId && item.operation === 'update')).toBe(
+        true,
+      );
+      expect(items.some((item) => item.targetId === projectId && item.operation === 'update')).toBe(
+        !ambiguous,
+      );
+      const edge = items.find((item) => item.targetKind === 'object_relationship');
+      if (ambiguous) expect(edge).toBeUndefined();
+      else
+        expect(Object.values(edge?.proposedPayload ?? {})).toEqual(
+          expect.arrayContaining([projectId, personId]),
+        );
+    },
+  );
 
   it('keeps a named project and international customer while dropping a spreadsheet misclassified as a project', async () => {
     const rawEventId = crypto.randomUUID();
