@@ -596,6 +596,71 @@ function taskDateAssertions(
   }
   return dates;
 }
+/** Correct an invented clock time on a single ordinary task only when its
+ * literal request specifies a day and the draft already picked that local day. */
+export function groundEventLocalDayOnlyDeadline(args: {
+  text: string;
+  name: string;
+  assignee: unknown;
+  project: unknown;
+  claimed: string;
+  timezone: string;
+  occurredAt: Date;
+}): string | undefined {
+  const instant = Date.parse(args.claimed);
+  if (
+    !Number.isFinite(instant) ||
+    /["“”`>]|\b(?:example|template|hypothetical|if|unless|not|never|instead|except|time|noon|midnight|morning|afternoon|evening|lunch|EOD|COB|UTC|GMT|opening|closing|o.clock)\b|\b\d{1,2}(?::\d{2}|\s*[ap]\.?m\b)|\bat\s+(?:\d|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/i.test(
+      args.text,
+    )
+  )
+    return;
+  const sentence =
+    args.text
+      .trim()
+      .split(/(?<=[.!?])\s+|\n+/u)
+      .at(-1) ?? '';
+  const prior = args.text.trim().slice(0, -sentence.length);
+  if (/\b(?:due|deadline|by|at|before|after|hour|zone)\b/i.test(prior)) return;
+  const match =
+    /^(?:(.+?) will |please )?([^.,;!?]+?) by (today|tomorrow|(?:next )?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday))[.!]?$/i.exec(
+      sentence,
+    );
+  if (!match?.[2]) return;
+  const actor = match[1];
+  if (
+    actor &&
+    !['i', 'we', typeof args.assignee === 'string' ? normalize(args.assignee) : ''].includes(
+      normalize(actor),
+    )
+  )
+    return;
+  const actionName = (name: string) => normalize(name).replace(/\b(?:the|an|a)\s+/gu, '');
+  const action = actionName(match[2]);
+  const name = actionName(args.name);
+  if (
+    name !== action &&
+    !(
+      typeof args.project === 'string' &&
+      name === action + ' for ' + actionName(args.project) &&
+      mentions(args.text, args.project)
+    )
+  )
+    return;
+  const { affirmed, denied } = taskDateAssertions(
+    sentence,
+    match[2],
+    args.timezone,
+    args.occurredAt,
+    'dueAt',
+  );
+  const [supported] = affirmed;
+  if (affirmed.size !== 1 || typeof supported !== 'number' || denied.size) return;
+  const localDay = (epoch: number) =>
+    zonedDateTimeFromDate(new Date(epoch), args.timezone).toPlainDate().toString();
+  return localDay(instant) === localDay(supported) ? new Date(supported).toISOString() : undefined;
+}
+
 const lifecycleWords: Record<string, RegExp> = {
   doing: /\b(?:started|working on|in progress|empezado|trabajando|begonnen)\b/i,
   done: /\b(?:finished|(?:is|now|was|marked) complete|completed|done|delivered|shipped|verified (?:fixed|resolved)|valmis|terminada|terminado|completada|completado|abgeschlossen)\b/i,

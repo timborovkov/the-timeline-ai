@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test';
 
 import {
   groundCommunicationBundles,
+  groundEventLocalDayOnlyDeadline,
   communicationGroundingSchema,
   emailChronologyStatements,
 } from '#src/workers/communication-grounding.js';
@@ -4127,4 +4128,26 @@ test('grounds the day-only deadline of a direct courteous request while preservi
     });
     expect(bundle?.items[0]?.proposedPayload.dueAt).toBe(expected);
   }
+});
+
+test('normalizes an ordinary task deadline only for the same identified action and local day', () => {
+  const base = {
+    name: 'Send the launch checklist for the Juniper rollout',
+    project: 'Juniper rollout',
+    assignee: 'Casey Lane',
+    claimed: '2026-07-03T17:00:00+03:00',
+    timezone: 'Europe/Helsinki',
+    occurredAt: new Date('2026-07-01T12:00:00Z'),
+  };
+  const text =
+    'We launched the Juniper rollout. Casey Lane will send the launch checklist by Friday.';
+  expect(groundEventLocalDayOnlyDeadline({ ...base, text })).toBe('2026-07-02T21:00:00.000Z');
+  for (const change of [
+    { text: text.replace('by Friday', 'by Friday at 17:00') },
+    { text: 'The deadline is noon. ' + text },
+    { text: text.replace('send the launch checklist', 'send the estimate') },
+    { text: text.replace('Casey Lane', 'Jamie') },
+    { text, claimed: '2026-07-10T17:00:00+03:00' },
+  ])
+    expect(groundEventLocalDayOnlyDeadline({ ...base, ...change })).toBeUndefined();
 });
