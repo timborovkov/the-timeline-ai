@@ -2950,6 +2950,7 @@ describe('processSuggestionJobForTests', () => {
       proposedPayload: {
         type,
         canonicalName: name,
+        aliases: name === 'Builders Outreach List' ? ['Casey Lane'] : undefined,
         localRef: name === 'Outreach Tracker' ? 'tracker' : undefined,
       },
     }));
@@ -2992,6 +2993,7 @@ describe('processSuggestionJobForTests', () => {
           supported: [
             { index: 0, quote: 'Outreach Tracker is a project.' },
             { index: 1, quote },
+            { index: 2, quote: 'Casey Lane leads delivery.' },
             { index: 3, quote: 'Casey Lane leads delivery.' },
           ],
         },

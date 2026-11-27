@@ -2505,25 +2505,18 @@ async function qualifyPersonAndProjectCreates(
       const sources = pack
         ? pack.items.filter((source) => ids.includes(source.rawEventId))
         : [anchor];
-      const names = objectCreate
-        ? [name, ...aliasesForRow({ aliases: item.proposedPayload.aliases })]
-        : [name];
       const indexes: number[] = [];
       for (const source of sources) {
-        const lower = source.contentText.toLowerCase();
-        const position = names
-          .map((alias) => lower.indexOf(alias.toLowerCase()))
-          .find((index) => index !== -1);
-        if (position === undefined) continue;
+        const position = source.contentText.toLowerCase().indexOf(name.toLowerCase());
+        if (position === -1) continue;
         const offset = Math.max(0, position - 2000);
         indexes.push(claims.length);
         claims.push({
           claim: JSON.stringify({
             type: objectCreate ? type : 'project',
             name,
-            aliases: names.slice(1),
           }),
-          names,
+          names: [name],
           rawEventId: source.rawEventId,
           text: source.contentText.slice(offset, offset + 6000),
         });
@@ -2532,7 +2525,7 @@ async function qualifyPersonAndProjectCreates(
     }
   const quotes = await supportedClaimQuotes(
     claims,
-    'Decide whether the source identifies the proposed name or a supplied alias as the claimed type. For a person require an identifiable human in context, such as a named contact, participant or author. For a project require a concrete initiative the team is delivering or tracking. A file title, inventory entry or document about an initiative is insufficient by itself. Capitalization alone supplies no identity.',
+    'Decide whether the source identifies the proposed canonical name as the claimed type. For a person require an identifiable human in context, such as a named contact, participant or author. For a project require a concrete initiative the team is delivering or tracking. A file title, inventory entry or document about an initiative is insufficient by itself. Capitalization alone supplies no identity.',
     io,
   );
   for (const bundle of bundles) {
