@@ -2873,7 +2873,7 @@ async function qualifyPersonAndProjectCreates(
     }
   const quotes = await supportedClaimQuotes(
     claims,
-    'Decide whether the source identifies the proposed canonical name or a supplied registered name as the claimed type. For a person require an identifiable human in context, such as a named contact, participant or author. For a project require a concrete initiative the team is delivering or tracking. A file title, inventory entry or document about an initiative is insufficient by itself. Apostrophe and dash typography may differ between the proposed name and source. Return the original source punctuation in the quote. Capitalization alone supplies no identity.',
+    'Decide whether the source identifies the proposed record in its claimed role. When registeredNames are supplied, the worker has already verified that each is a unique existing alias for this record. Use that identity mapping to interpret the passage. A registered nickname or initials acting as the responsible lead can identify that person without the source spelling out their full name. Still reject incidental file mentions or a passage using the spelling for a different referent. For a new person require an identifiable human in context, such as a named contact, participant or author. For a project require a concrete initiative the team is delivering or tracking. A file title, inventory entry or document about an initiative is insufficient by itself. Apostrophe and dash typography may differ between the proposed name and source. Return the original source punctuation in the quote. Capitalization alone supplies no identity.',
     io,
   );
   for (const bundle of bundles) {
