@@ -47,11 +47,30 @@ import {
   usableRawEventIds,
 } from '#src/workers/suggestions.js';
 
+// Other worker tests exercise identity resolution and persistence with a controlled
+// evidence reviewer. Evidence-specific tests below supply explicit verdicts.
+const confirmFixtureClaims: typeof llm.chatStructured = async (input) => {
+  const claims = JSON.parse(input.prompt) as { index: number; source: string }[];
+  return {
+    model: 'fixture-review',
+    object: input.schema.parse({
+      supported: claims.map(({ index, source }) => ({
+        index,
+        quote: source
+          .replace(/^<external_content[^>]*>/, '')
+          .replace(/<\/external_content>$/, '')
+          .slice(0, 1000),
+      })),
+    }),
+  };
+};
+
 const processSuggestionJobForTests = (
   ...args: Parameters<typeof processRealSuggestionJobForTests>
 ) =>
   processRealSuggestionJobForTests(args[0], args[1], {
     auditCommunication: controlledCommunicationAudit,
+    reviewProposalEvidence: confirmFixtureClaims,
     ...args[2],
   });
 
@@ -201,6 +220,88 @@ async function seedTelegramConversationReview(
   });
 }
 
+function twoSourcePack(
+  rawEventId: string,
+  anchorText: string,
+  supportRawEventId: string,
+  supportText: string,
+) {
+  return {
+    version: evidencePacks.EVIDENCE_PACK_VERSION,
+    policyVersion: evidencePacks.EVIDENCE_PACK_POLICIES.proposal.version,
+    fingerprint: 'f'.repeat(64),
+    purpose: 'proposal',
+    audience: {
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: null,
+    },
+    items: [
+      {
+        rawEventId,
+        surfaceKey: 'ingest_webhook:legacy',
+        surface: 'Webhook',
+        source: 'ingest_webhook',
+        role: 'core',
+        contentText: anchorText,
+        contentFingerprint: suggestions.suggestionDedupeKey({
+          contentText: anchorText,
+          occurredAt: REFERENCE_DATE.toISOString(),
+        }),
+        occurredAt: REFERENCE_DATE,
+        authorUserId: OWNER_ID,
+        sourceMetadata: { proposal_generation_enabled: true },
+        relationshipSignals: [{ kind: 'anchor', strength: 'hard' }],
+        sourceRefs: [{ source: 'ingest_webhook', rawEventId }],
+        rank: 1,
+        rankReasons: ['protected_core'],
+        visibility: {
+          visibility: 'team',
+          visibilityOwnerUserId: null,
+          visibilityUserIds: null,
+        },
+        truncated: false,
+        truncationReason: null,
+      },
+      {
+        rawEventId: supportRawEventId,
+        surfaceKey: 'email',
+        surface: 'Email',
+        source: 'email',
+        role: 'supporting',
+        contentText: supportText,
+        contentFingerprint: suggestions.suggestionDedupeKey({
+          contentText: supportText,
+          occurredAt: REFERENCE_DATE.toISOString(),
+        }),
+        occurredAt: REFERENCE_DATE,
+        authorUserId: OWNER_ID,
+        sourceMetadata: {},
+        relationshipSignals: [{ kind: 'artifact_association', strength: 'hard' }],
+        sourceRefs: [{ source: 'email', rawEventId: supportRawEventId }],
+        rank: 2,
+        rankReasons: ['direct_artifact_relationship'],
+        visibility: {
+          visibility: 'team',
+          visibilityOwnerUserId: null,
+          visibilityUserIds: null,
+        },
+        truncated: false,
+        truncationReason: null,
+      },
+    ],
+    metrics: {
+      candidateCount: 2,
+      selectedCount: 2,
+      surfaceCount: 2,
+      estimatedTokens: 25,
+      truncated: false,
+      omissionReasons: {},
+      buildDurationMs: 0,
+    },
+  } satisfies evidencePacks.EvidencePack;
+}
+
 describe('fallbackBundles', () => {
   it('does not treat next inside the action text as the time phrase', () => {
     const [bundle] = fallbackBundles({
@@ -220,15 +321,37 @@ describe('fallbackBundles', () => {
     expect(bundle?.items[0]?.proposedPayload.dueAt).toBeUndefined();
   });
 
+  it.each([
+    'Decision: still pending. Nobody has chosen a supplier.',
+    'For reference only: ENG-42. It was closed last week. No action is requested.',
+    'ENG-42 is in the archive.',
+    'Training example: "I will send the contract tomorrow." No one has agreed to send it.',
+    'Mira said I will send the contract tomorrow.',
+    "I'll review the pricing. Mira goes on leave tomorrow.",
+    'I will not send the contract tomorrow.',
+    'We did not move ENG-42 to done.',
+    'Please follow up on the caterer. ENG-42 was archived last year.',
+    'Please follow up on the caterer, ENG-42 was archived last year.',
+  ])('abstains on references, unresolved decisions and unattributed quotes: %s', (text) => {
+    expect(
+      fallbackBundles({
+        text,
+        timezone: 'UTC',
+        occurredAt: REFERENCE_DATE,
+        authorUserId: OWNER_ID,
+      }),
+    ).toEqual([]);
+  });
+
   it('still supports next weekday phrases', () => {
     const [bundle] = fallbackBundles({
-      text: 'I will send the memo next Tuesday',
+      text: 'I will send the template next Tuesday',
       timezone: 'UTC',
       occurredAt: REFERENCE_DATE,
       authorUserId: null,
     });
 
-    expect(bundle?.items[0]?.title).toBe('Send the memo');
+    expect(bundle?.items[0]?.title).toBe('Send the template');
     expect(bundle?.items).toHaveLength(1);
     expect(bundle?.items[0]?.proposedPayload.plannedDate).toBe('2026-06-02');
   });
@@ -1692,6 +1815,53 @@ describe('processSuggestionJobForTests', () => {
     await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
   });
 
+  it('checks each project against its own cited evidence in an enforced pack', async () => {
+    const anchorId = crypto.randomUUID();
+    const supportId = crypto.randomUUID();
+    const anchorText = 'The Maple rollout project started today.';
+    const supportText = 'We launched the Alder rollout project.';
+    await seedRawEvent(db as never, {
+      id: anchorId,
+      source: 'ingest_webhook',
+      text: anchorText,
+      sourceMetadata: { proposal_generation_enabled: true },
+    });
+    await seedRawEvent(db as never, { id: supportId, source: 'email', text: supportText });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track project launches',
+            confidence: 'high',
+            items: ['Alder rollout', 'Maple rollout'].map((name) => ({
+              operation: 'create',
+              targetKind: 'object',
+              title: name,
+              proposedPayload: { type: 'project', canonicalName: name },
+              evidenceRawEventIds: [supportId],
+            })),
+          },
+        ],
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, rawEventId: anchorId },
+      {
+        getEnv: () => envWithEvidenceMode('enforced'),
+        chatStructured: chat,
+        modelId: MODEL_ID,
+        buildEvidencePack: vi
+          .fn()
+          .mockResolvedValue(twoSourcePack(anchorId, anchorText, supportId, supportText)),
+      },
+    );
+    expect((await db.select().from(agentSuggestionItems)).map((item) => item.title)).toEqual([
+      'Alder rollout',
+    ]);
+  });
+
   it('rejects an uncited selected pack row tombstoned during extraction', async () => {
     const rawEventId = '99999999-6788-4788-8788-678867886788';
     const supportRawEventId = '99999999-6799-4799-8799-679967996799';
@@ -1708,80 +1878,7 @@ describe('processSuggestionJobForTests', () => {
       source: 'email',
       text: supportText,
     });
-    const pack = {
-      version: evidencePacks.EVIDENCE_PACK_VERSION,
-      policyVersion: evidencePacks.EVIDENCE_PACK_POLICIES.proposal.version,
-      fingerprint: 'f'.repeat(64),
-      purpose: 'proposal',
-      audience: {
-        visibility: 'team',
-        visibilityOwnerUserId: null,
-        visibilityUserIds: null,
-      },
-      items: [
-        {
-          rawEventId,
-          surfaceKey: 'ingest_webhook:legacy',
-          surface: 'Webhook',
-          source: 'ingest_webhook',
-          role: 'core',
-          contentText: anchorText,
-          contentFingerprint: suggestions.suggestionDedupeKey({
-            contentText: anchorText,
-            occurredAt: REFERENCE_DATE.toISOString(),
-          }),
-          occurredAt: REFERENCE_DATE,
-          authorUserId: OWNER_ID,
-          sourceMetadata: { proposal_generation_enabled: true },
-          relationshipSignals: [{ kind: 'anchor', strength: 'hard' }],
-          sourceRefs: [{ source: 'ingest_webhook', rawEventId }],
-          rank: 1,
-          rankReasons: ['protected_core'],
-          visibility: {
-            visibility: 'team',
-            visibilityOwnerUserId: null,
-            visibilityUserIds: null,
-          },
-          truncated: false,
-          truncationReason: null,
-        },
-        {
-          rawEventId: supportRawEventId,
-          surfaceKey: 'email',
-          surface: 'Email',
-          source: 'email',
-          role: 'supporting',
-          contentText: supportText,
-          contentFingerprint: suggestions.suggestionDedupeKey({
-            contentText: supportText,
-            occurredAt: REFERENCE_DATE.toISOString(),
-          }),
-          occurredAt: REFERENCE_DATE,
-          authorUserId: OWNER_ID,
-          sourceMetadata: {},
-          relationshipSignals: [{ kind: 'artifact_association', strength: 'hard' }],
-          sourceRefs: [{ source: 'email', rawEventId: supportRawEventId }],
-          rank: 2,
-          rankReasons: ['direct_artifact_relationship'],
-          visibility: {
-            visibility: 'team',
-            visibilityOwnerUserId: null,
-            visibilityUserIds: null,
-          },
-          truncated: false,
-          truncationReason: null,
-        },
-      ],
-      metrics: {
-        candidateCount: 2,
-        selectedCount: 2,
-        surfaceCount: 2,
-        estimatedTokens: 25,
-        truncated: false,
-        omissionReasons: {},
-        buildDurationMs: 0,
-      },
-    } satisfies evidencePacks.EvidencePack;
+    const pack = twoSourcePack(rawEventId, anchorText, supportRawEventId, supportText);
     const chat = vi.fn().mockImplementation(async () => {
       await db
         .update(rawEvents)
@@ -2205,7 +2302,7 @@ describe('processSuggestionJobForTests', () => {
     await expect(db.select().from(reconciliationOutputs)).resolves.toEqual([]);
   });
 
-  it('requires supporting evidence for short company duplicate candidates and suppresses rejected pairs', async () => {
+  it('does not merge companies from a shared short token and co-attachment', async () => {
     const [shortName, fullName, bareShort, bareFull, privateShort, privateFull] = await db
       .insert(entities)
       .values([
@@ -2290,24 +2387,11 @@ describe('processSuggestionJobForTests', () => {
     );
 
     const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
-    let bundles = await scope.suggestions.listPendingSuggestions();
-    expect(bundles).toHaveLength(1);
-    const objectIds = bundles[0]?.items[0]?.proposedPayload.objectIds;
-    if (!Array.isArray(objectIds)) throw new Error('expected merge object ids');
-    expect(new Set(objectIds)).toEqual(new Set([shortName.id, fullName.id]));
-
-    await expect(
-      scope.suggestions.rejectSuggestionItem(bundles[0]?.items[0]?.id ?? ''),
-    ).resolves.toBe(true);
-    await processSuggestionJobForTests(
-      { db: db as never },
-      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'daily' },
-    );
-    bundles = await scope.suggestions.listPendingSuggestions();
+    const bundles = await scope.suggestions.listPendingSuggestions();
     expect(bundles).toEqual([]);
   });
 
-  it('suggests short company duplicate candidates when the short token is an alias', async () => {
+  it('suggests a company merge when both records have an approved alias in common', async () => {
     const [aliasedShort, fullName] = await db
       .insert(entities)
       .values([
@@ -2317,7 +2401,7 @@ describe('processSuggestionJobForTests', () => {
           canonicalName: 'DFK Industries',
           aliases: ['DFK'],
         },
-        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK Finland Oy' },
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK Finland Oy', aliases: ['DFK'] },
       ])
       .returning({ id: entities.id });
     if (!aliasedShort || !fullName) throw new Error('expected company fixtures');
@@ -2369,7 +2453,7 @@ describe('processSuggestionJobForTests', () => {
       .insert(entities)
       .values([
         { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK' },
-        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK Finland Oy' },
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK Finland Oy', aliases: ['DFK'] },
         { teamId: TEAM_ID, type: 'company', canonicalName: 'KPMG' },
         { teamId: TEAM_ID, type: 'vendor', canonicalName: 'K P M G' },
       ])
@@ -2442,6 +2526,7 @@ describe('processSuggestionJobForTests', () => {
           teamId: TEAM_ID,
           type: 'company',
           canonicalName: 'DFK Finland Oy',
+          aliases: ['DFK'],
           updatedAt: oldDate,
         },
       ])
@@ -2538,7 +2623,7 @@ describe('processSuggestionJobForTests', () => {
       .insert(entities)
       .values([
         { teamId: TEAM_ID, type: 'company', canonicalName: 'DFK' },
-        { teamId: TEAM_ID, type: 'person', canonicalName: 'Jonne Granqvist' },
+        { teamId: TEAM_ID, type: 'person', canonicalName: 'Jonne Granqvist', aliases: ['Jonne'] },
       ])
       .returning({ id: entities.id });
     if (!company || !person) throw new Error('expected object fixtures');
@@ -2618,6 +2703,16 @@ describe('processSuggestionJobForTests', () => {
       { factId: insertedFacts[2]?.id ?? '', entityId: person.id, role: 'object' },
     ]);
 
+    const review = {
+      getEnv: () => ({ IDENTITY_SEMANTIC_ENABLED: true, OPENROUTER_API_KEY: 'test-key' }) as never,
+      identityEvidence: async () => [],
+      reviewProposalEvidence: vi.fn().mockResolvedValue({
+        model: MODEL_ID,
+        object: {
+          supported: [{ index: 0, quote: 'Newer note: Jonne from DFK owns the pilot follow-up.' }],
+        },
+      }),
+    };
     await processSuggestionJobForTests(
       { db: db as never },
       {
@@ -2626,6 +2721,7 @@ describe('processSuggestionJobForTests', () => {
         objectId: company.id,
         triggeredBy: 'memory_repair',
       },
+      review,
     );
 
     const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
@@ -2636,10 +2732,10 @@ describe('processSuggestionJobForTests', () => {
       evidence: [
         expect.objectContaining({
           rawEventId: newerRaw.id,
-          quote: 'Newer fact: Jonne from DFK owns the pilot follow-up.',
+          quote: 'Newer note: Jonne from DFK owns the pilot follow-up.',
         }),
       ],
-      confidence: 'high',
+      confidence: 'medium',
     });
     const relationshipItem = bundles[0]?.items[0];
     expect(relationshipItem).toMatchObject({
@@ -2745,6 +2841,7 @@ describe('processSuggestionJobForTests', () => {
         objectId: company.id,
         triggeredBy: 'memory_repair',
       },
+      review,
     );
 
     bundles = await scope.suggestions.listPendingSuggestions();
@@ -2754,6 +2851,172 @@ describe('processSuggestionJobForTests', () => {
       .from(agentSuggestionItems)
       .where(eq(agentSuggestionItems.targetKind, 'object_relationship'));
     expect(relationshipItems).toEqual([{ status: 'rejected' }]);
+  });
+
+  it('requires an affirmative link for co-attached companies and ambiguous work titles', async () => {
+    const [anchor, other, task] = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'May' },
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'Cobalt' },
+        { teamId: TEAM_ID, type: 'task', canonicalName: 'Prepare May invoices', status: 'todo' },
+      ])
+      .returning();
+    if (!anchor || !other || !task) throw new Error('Missing relationship fixtures');
+    const text = 'May has no partnership with Cobalt. They are unrelated.';
+    const rawEventId = crypto.randomUUID();
+    await seedRawEvent(db as never, { id: rawEventId, text });
+    await seedRawEvent(db as never, {
+      id: crypto.randomUUID(),
+      source: 'system',
+      text: 'Created task: Prepare May invoices',
+      sourceMetadata: { kind: 'object_create', entity_id: task.id },
+    });
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId,
+        statement: text,
+        confidence: 1,
+        modelVersion: 'fixture',
+      })
+      .returning();
+    if (!fact) throw new Error('Missing repair fact');
+    await db.insert(factEntities).values([
+      { factId: fact.id, entityId: anchor.id, role: 'subject' },
+      { factId: fact.id, entityId: other.id, role: 'object' },
+    ]);
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        supported: [
+          { index: 0, quote: 'May partners with Cobalt.' },
+          { index: 1, quote: 'May' },
+        ],
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, scope: 'object_cleanup', objectId: anchor.id },
+      {
+        getEnv: () => ({ IDENTITY_SEMANTIC_ENABLED: true }) as never,
+        reviewProposalEvidence: chat,
+        chatStructured: chat,
+        identityEvidence: async () => [],
+      },
+    );
+    expect(chat).toHaveBeenCalledTimes(1);
+    expect(await db.select().from(agentSuggestionItems)).toEqual([]);
+  });
+
+  it('keeps independent similarly named companies and companies named in non-Latin scripts', async () => {
+    await db.insert(entities).values(
+      ['Atlas', 'Atlas Logistics', '青空物流'].map((canonicalName) => ({
+        teamId: TEAM_ID,
+        type: 'company' as const,
+        canonicalName,
+      })),
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+    expect(await db.select().from(agentSuggestionItems)).toEqual([]);
+  });
+
+  it('keeps a named project and international customer while dropping a spreadsheet misclassified as a project', async () => {
+    const rawEventId = crypto.randomUUID();
+    const quote = 'We launched the Cedar rollout project for 青空物流.';
+    const text =
+      'The folder contains Outreach Tracker, Builders Outreach List and Sapphire.xlsx. Casey Lane leads delivery. Please check the totals. ' +
+      quote;
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text,
+      source: 'ingest_webhook',
+      sourceMetadata: { extracted_at: REFERENCE_DATE.toISOString() },
+    });
+    const items = [
+      ['company', '青空物流'],
+      ['project', 'Outreach Tracker'],
+      ['project', 'Cedar rollout'],
+      ['person', 'Builders Outreach List'],
+      ['person', 'Casey Lane'],
+    ].map(([type, name]) => ({
+      operation: 'create',
+      targetKind: 'object',
+      title: name,
+      proposedPayload: {
+        type,
+        canonicalName: name,
+        localRef: name === 'Outreach Tracker' ? 'tracker' : undefined,
+      },
+    }));
+    const chat = vi
+      .fn()
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: 'Track the rollout',
+              confidence: 'medium',
+              quote: text,
+              items: [
+                ...items,
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Check the totals',
+                  proposedPayload: {
+                    canonicalName: 'Check the totals',
+                    createProjectName: 'Sapphire',
+                    projectName: 'Sapphire',
+                  },
+                },
+                {
+                  operation: 'create',
+                  targetKind: 'object_relationship',
+                  title: 'Link file to company',
+                  proposedPayload: { fromRef: 'tracker', toName: '青空物流', kind: 'related' },
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValue({
+        model: MODEL_ID,
+        object: {
+          supported: [
+            { index: 0, quote: 'Outreach Tracker is a project.' },
+            { index: 1, quote },
+            { index: 3, quote: 'Casey Lane leads delivery.' },
+          ],
+        },
+      });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, rawEventId },
+      {
+        getEnv: env,
+        reviewProposalEvidence: chat,
+        chatStructured: chat,
+        modelId: MODEL_ID,
+        taskCategoryClassificationEnabled: false,
+      },
+    );
+    const saved = await db.select().from(agentSuggestionItems);
+    expect(saved.map((item) => item.title).sort()).toEqual([
+      'Casey Lane',
+      'Cedar rollout',
+      'Check the totals',
+      '青空物流',
+    ]);
+    const task = saved.find((item) => item.targetKind === 'task');
+    expect(task?.proposedPayload).not.toHaveProperty('createProjectName');
+    expect(task?.proposedPayload).not.toHaveProperty('projectName');
   });
 
   it('does not turn weak fact co-attachment into relationship repair', async () => {
@@ -2894,6 +3157,18 @@ describe('processSuggestionJobForTests', () => {
       .returning({ id: rawEvents.id });
     if (!raw) throw new Error('expected raw event');
 
+    const review = {
+      getEnv: () => ({ IDENTITY_SEMANTIC_ENABLED: true, OPENROUTER_API_KEY: 'test-key' }) as never,
+      identityEvidence: async () => [],
+      reviewProposalEvidence: vi.fn().mockResolvedValue({
+        model: MODEL_ID,
+        object: {
+          supported: [
+            { index: 0, quote: 'Created task: Follow up on DFK Finland Oy pilot proposal' },
+          ],
+        },
+      }),
+    };
     await processSuggestionJobForTests(
       { db: db as never },
       {
@@ -2902,6 +3177,7 @@ describe('processSuggestionJobForTests', () => {
         objectId: company.id,
         triggeredBy: 'memory_repair',
       },
+      review,
     );
 
     const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
@@ -2911,7 +3187,7 @@ describe('processSuggestionJobForTests', () => {
     if (!bundle) throw new Error('expected connected-work bundle');
     expect(bundle).toMatchObject({
       title: 'Relate DFK Finland Oy and Follow up on DFK Finland Oy pilot proposal',
-      reason: 'A work item names this object and is connected work.',
+      reason: 'The source connects these two records.',
       evidence: [expect.objectContaining({ rawEventId: raw.id })],
     });
     expect(bundle.metadata).toMatchObject({
@@ -2943,6 +3219,7 @@ describe('processSuggestionJobForTests', () => {
         objectId: company.id,
         triggeredBy: 'memory_repair',
       },
+      review,
     );
 
     bundles = await scope.suggestions.listPendingSuggestions();

@@ -116,6 +116,11 @@ Exact source citations must survive generation, revision and approval. If a requ
 
 Conversation reviews collect bounded related messages and propose concrete changes. A single firehose message is not automatically a task; intentional captures can be evaluated directly. Proposals preserve original evidence, source time and source-specific authority.
 
+For sources outside the communication and meeting audits, the model verifies new
+Person and Project proposals, including projects created with a task, against the item's source evidence. A Person needs evidence identifying a human.
+A named initiative needs evidence of project work. A spreadsheet title alone is
+insufficient. Enforced evidence packs restrict this check to the item's cited rows.
+
 Pending proposals are living review objects: supported refinements amend or supersede the pending change rather than creating duplicate approvals. Preserve accumulated evidence, avoid guessed identity and distinguish a changed time from a different event. Accepted records are not silently rewritten when a later event arrives; propose another change or use the authorized repair path.
 
 Captured-work matching joins on the source's durable ID, alias or unique `repo#number`. GitHub/Linear/Monday lifecycle changes can coalesce task status/assignee proposals without a suggestion-model call. Match an existing canonical or pending identity before creating another object. Source actor mapping must resolve to a permitted Timeline member; absence is not permission to guess an assignee.
@@ -144,7 +149,7 @@ Generic ingest webhooks are evidence-only
 
 The suggestion worker can approve eligible items from checked, team-visible conversations and meeting transcripts through transactional acceptance. Grounded record changes can include creation and explicit renames, recognized lifecycle states, and assignment and deadlines for tasks and follow-ups. A confirmed offer sent for an identified deal advances its status to proposal. An explicitly named deal stage can be recorded separately. Grounded links can apply once both endpoints resolve to active records. An addition that would replace an existing primary project or company requires review. Planned dates and selective undo apply to tasks. Other items in the same bundle retain their own review requirements. A workspace admin can require review before evidence replaces a manually set record value. Explicit archive and merge requests from active members in Slack require review unless separately enabled by an admin. Automatic merges also require matching provider identity and follow the object merge engine’s type and dependency restrictions. The engine excludes tasks and follow-ups. Other unsupported or ambiguous changes continue through the review queue. A policy change checks existing pending approvals under the current policy, with a daily recovery pass if immediate scheduling fails. Automatic application retains the approval item and its policy revision. Undo records a new human correction when the original automatic change is still the latest write to each affected task field.
 
-A task can have a planned work day independent of its deadline. The planned date is a calendar date and does not produce a calendar event or a deadline notification. The event-local commitment fallback resolves relative dates from the source occurrence time in the workspace zone. In that fallback, “next Friday” means the first Friday strictly after the source’s local date. A short task reference must identify one active task through visible evidence. A date-only correction such as “Actually, Monday” can use the preceding accepted plan when the visible conversation and the plan still identify the same task and field.
+A task can have a planned work day independent of its deadline. The planned date is a calendar date and does not produce a calendar event or a deadline notification. When ordinary ingest returns no model proposals, the event-local fallback requires an explicit decision or actionable request. A ticket reference, pending decision or quoted example supplies no commitment. Only an attributable first-person commitment can supply its author as owner. The fallback resolves relative dates from the source occurrence time in the workspace zone. In that fallback, “next Friday” means the first Friday strictly after the source’s local date. A short task reference must identify one active task through visible evidence. A date-only correction such as “Actually, Monday” can use the preceding accepted plan when the visible conversation and the plan still identify the same task and field.
 
 Reviewers can reject one or several proposals with an optional standard reason.
 The decision and reason are saved together. For visible stale evidence,
@@ -438,6 +443,12 @@ the last successful checkpoint. The reconciliation page exposes recent cleanup a
 document-review progress; the approval surface owns review and rejection.
 
 Each active object receives scoped duplicate, relationship and low-signal review.
+Name similarity and shared fact attachments can retrieve candidates. A merge requires
+a matching identity or approved alias, or source-backed semantic equivalence.
+For relationship repair the model must cite an affirmative passage identifying both
+records. A denied partnership or a month in a task title supplies no relationship.
+Name filtering preserves letters across scripts in ingest and cleanup. Extraction
+keeps business outcomes mentioned alongside a file transfer.
 For a missing Person, semantic identity review examines up to three team-visible sources
 linked to the object by extracted facts. The model must identify an individual by
 full name and cite a passage that connects them to the selected object or an alias.

@@ -12,6 +12,7 @@ import {
   teams,
   users,
 } from '@timeline/db';
+import { llm } from '@timeline/shared';
 import { generateAndStoreObjectSummary } from '@timeline/shared/objects';
 import { withTeam } from '@timeline/shared/team-scope';
 import { expect } from '@timeline/test-support';
@@ -104,6 +105,111 @@ maybeDescribe('live suggestion worker evals', () => {
         plannedDate: null,
       }),
     ]);
+  }, 240_000);
+
+  it('uses source roles for webhook person and project drafts', async () => {
+    const text =
+      'Drive refresh: Builders Outreach List.xlsx, Outreach Tracker.xlsx, and Sapphire.xlsx. Casey Lane is leading the new Juniper rollout project. Our delivery team started the rollout yesterday.';
+    await db
+      .update(rawEvents)
+      .set({
+        source: 'ingest_webhook',
+        contentText: text,
+        sourceMetadata: {
+          proposal_generation_enabled: true,
+          extracted_at: new Date().toISOString(),
+        },
+      })
+      .where(eq(rawEvents.id, RAW_EVENT_ID));
+    const items = [
+      ['person', 'Builders Outreach List'],
+      ['project', 'Outreach Tracker'],
+      ['project', 'Sapphire'],
+      ['person', 'Casey Lane'],
+      ['project', 'Juniper rollout'],
+    ].map(([type, name]) => ({
+      operation: 'create',
+      targetKind: 'object',
+      title: name,
+      proposedPayload: { type, canonicalName: name },
+    }));
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, rawEventId: RAW_EVENT_ID },
+      {
+        getEnv: liveEnv,
+        chatStructured: async (input) => ({
+          model: 'fixture',
+          object: input.schema.parse({
+            bundles: [{ title: 'Track the rollout', quote: text, confidence: 'medium', items }],
+          }),
+        }),
+        reviewProposalEvidence: llm.chatStructured,
+      },
+    );
+    const pending = await withTeam(
+      db as never,
+      TEAM_ID,
+      USER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(pending.flatMap((bundle) => bundle.items.map((item) => item.title)).sort()).toEqual([
+      'Casey Lane',
+      'Juniper rollout',
+    ]);
+  }, 240_000);
+
+  it('declines a denied company relationship and a month used in a task title', async () => {
+    const [may, vendor, task] = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'May' },
+        { teamId: TEAM_ID, type: 'company', canonicalName: 'Cobalt' },
+        { teamId: TEAM_ID, type: 'task', canonicalName: 'Prepare May invoices', status: 'todo' },
+      ])
+      .returning();
+    if (!may || !vendor || !task) throw new Error('missing fixture objects');
+    const text =
+      'May explicitly denied any partnership with Cobalt. They have never worked together.';
+    await db
+      .update(rawEvents)
+      .set({ source: 'integration', contentText: text })
+      .where(eq(rawEvents.id, RAW_EVENT_ID));
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: RAW_EVENT_ID,
+        statement: text,
+        confidence: 1,
+        modelVersion: 'fixture',
+      })
+      .returning();
+    if (!fact) throw new Error('missing fixture fact');
+    await db.insert(factEntities).values([
+      { factId: fact.id, entityId: may.id, role: 'subject' },
+      { factId: fact.id, entityId: vendor.id, role: 'object' },
+    ]);
+    await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        source: 'system',
+        contentText: 'Created task: Prepare May invoices',
+        sourceMetadata: { kind: 'object_create', entity_id: task.id, actor_kind: 'user' },
+        visibility: 'team',
+        occurredAt: new Date(),
+      });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, objectId: may.id, triggeredBy: 'memory_repair' },
+      { identityEvidence: async () => [] },
+    );
+    const pending = await withTeam(
+      db as never,
+      TEAM_ID,
+      USER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(pending.flatMap((bundle) => bundle.items)).toEqual([]);
   }, 240_000);
 
   it('identifies the named contact among Drive file titles during object repair', async () => {
