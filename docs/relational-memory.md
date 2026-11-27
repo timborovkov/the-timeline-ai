@@ -121,7 +121,7 @@ Person and Project proposals, including projects created with a task, against th
 A named initiative needs evidence of project work. A spreadsheet title alone is
 insufficient. Name matching accepts typographic apostrophe and dash variants. The citation must still be an exact passage from the source. Enforced evidence packs restrict this check to the item's cited rows.
 
-A source-wide tracker key can enrich a single proposed task. Across multiple tasks, the key must identify one of the items to qualify for automatic attachment.
+Repeated independent task or decision creates in an ordinary extractor response share an approval when their review context and operational fields agree. Distinct tracker identities and conflicting payloads remain separate. A source-wide tracker key can enrich a single proposed task. Across multiple tasks, the key must identify one of the items to qualify for automatic attachment.
 
 Pending proposals are living review objects: supported refinements amend or supersede the pending change rather than creating duplicate approvals. Preserve accumulated evidence, avoid guessed identity and distinguish a changed time from a different event. Accepted records are not silently rewritten when a later event arrives; propose another change or use the authorized repair path.
 

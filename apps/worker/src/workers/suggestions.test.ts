@@ -41,6 +41,7 @@ import { applyDbMigrations } from '#src/test/pglite.js';
 import {
   assembleSuggestionPrompt,
   preserveDocumentPersonEmails,
+  collapseRepeatedEventCreates,
   fallbackBundles,
   verifyEventLocalPlans,
   processSuggestionJobForTests as processRealSuggestionJobForTests,
@@ -302,6 +303,56 @@ function twoSourcePack(
     },
   } satisfies evidencePacks.EvidencePack;
 }
+
+describe('repeated event-local creates', () => {
+  const bundle = (items: Parameters<typeof collapseRepeatedEventCreates>[0][number]['items']) => ({
+    title: 'Review',
+    confidence: 'medium' as const,
+    items,
+  });
+  it('preserves the full cited decision label and the decision body', () => {
+    const canonicalName = 'Use the "Cedar" option for delivery';
+    const item = {
+      operation: 'create' as const,
+      targetKind: 'object' as const,
+      title: 'Use the ',
+      proposedPayload: { type: 'decision', canonicalName, status: 'accepted' },
+    };
+    const rich = {
+      ...item,
+      proposedPayload: { ...item.proposedPayload, body: 'Procurement approved it.' },
+    };
+    const draft = bundle([item, rich]);
+    collapseRepeatedEventCreates([draft], 'We decided to use the "Cedar" option for delivery.');
+    expect(draft.items).toHaveLength(1);
+    expect(draft.items[0]).toMatchObject({
+      title: canonicalName,
+      proposedPayload: { body: 'Procurement approved it.' },
+    });
+  });
+  it('collapses repeated task drafts across identical bundles and preserves differing tracker IDs', () => {
+    const title = 'Move login to done after QA';
+    const task = (aliases: string[]) => ({
+      title,
+      operation: 'create' as const,
+      targetKind: 'task' as const,
+      proposedPayload: { canonicalName: title, localRef: 'login-done', aliases },
+    });
+    const first = bundle([
+      task(['ENG-77', 'login']),
+      task(['ENG-77', 'login', 'move login to done']),
+    ]);
+    const second = bundle([task(['ENG-77']), task(['ENG-78'])]);
+    collapseRepeatedEventCreates([first, second], title);
+    expect(first.items).toHaveLength(1);
+    expect(first.items[0]?.proposedPayload.aliases).toEqual([
+      'ENG-77',
+      'login',
+      'move login to done',
+    ]);
+    expect(second.items.map((item) => item.proposedPayload.aliases)).toEqual([['ENG-78']]);
+  });
+});
 
 describe('fallbackBundles', () => {
   it('does not treat next inside the action text as the time phrase', () => {

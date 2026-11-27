@@ -1340,6 +1340,67 @@ function fallbackCommitmentBundle(
   };
 }
 
+/** Collapse repeated task/decision creates from one extractor response before
+ * routing can multiply them into duplicate hub links. Only independent records
+ * with identical review context, identity and operational fields are eligible. */
+export function collapseRepeatedEventCreates(bundles: SuggestionBundleOutput[], text: string) {
+  const seen = new Map<string, SuggestionItemOutput>();
+  for (const bundle of bundles) {
+    if (
+      !bundle.items.every(
+        (item) =>
+          item.operation === 'create' &&
+          !item.targetId &&
+          (item.targetKind === 'task' ||
+            (item.targetKind === 'object' && item.proposedPayload.type === 'decision')),
+      )
+    )
+      continue;
+    const { items, ...context } = bundle;
+    bundle.items = items.filter((item) => {
+      const name = itemCanonicalName(item);
+      // Fix a truncated display label only when the complete canonical name
+      // also occurs in the source. References bind to the existing name/ref.
+      if (
+        name.toLowerCase().startsWith(item.title.trim().toLowerCase()) &&
+        text.toLowerCase().includes(name.toLowerCase())
+      )
+        item.title = name;
+      const { aliases, body, ...fields } = item.proposedPayload;
+      const identityAliases = Array.isArray(aliases)
+        ? aliases.filter(
+            (alias: unknown) =>
+              typeof alias !== 'string' || !evidenceNamePattern([alias]).test(name),
+          )
+        : aliases;
+      const key = suggestions.suggestionDedupeKey({
+        context,
+        targetKind: item.targetKind,
+        fields,
+        title: item.title,
+        description: item.description,
+        evidence: item.evidenceRawEventIds,
+        aliases: identityAliases ?? [],
+      });
+      const previous = seen.get(key);
+      if (!previous) {
+        seen.set(key, item);
+        return true;
+      }
+      const previousBody = previous.proposedPayload.body;
+      if (previousBody !== undefined && body !== undefined && previousBody !== body) return true;
+      if (body !== undefined) previous.proposedPayload.body = body;
+      if (Array.isArray(aliases)) {
+        const prior = previous.proposedPayload.aliases;
+        previous.proposedPayload.aliases = [
+          ...new Set([...(Array.isArray(prior) ? prior : []), ...aliases]),
+        ];
+      }
+      return false;
+    });
+  }
+}
+
 /** Ordinary creates can keep a planned day when the same event-local rule
  * independently resolves the literal commitment. Other writes need an audit. */
 export function verifyEventLocalPlans(
@@ -5299,6 +5360,8 @@ async function runSuggestionExtraction(
       evidencePackEnforced ? evidencePack : null,
       io,
     );
+    if (!args.document && !args.repairObjectId && !args.conversation && !evidencePackEnforced)
+      collapseRepeatedEventCreates(modelBundles, text);
     verifyEventLocalPlans(
       modelBundles,
       args.document ||
