@@ -1124,7 +1124,7 @@ function messyCommitmentTitle(text: string): string | null {
     if (uniqueAlias.kind === 'linear') return `Close the loop on ${uniqueAlias.alias}`;
     return `Follow up on Monday item ${uniqueAlias.alias}`;
   }
-  const action = /^i can take (?:it|that)$/i.test(request)
+  const action = /^i can take (?:it|that)[.!]?$/i.test(request)
     ? (clauses[requestIndex - 1] ?? '')
     : request;
   if (/\b(?:prepare (?:the )?login page|move (?:the )?login(?: page)? to done)\b/i.test(action))

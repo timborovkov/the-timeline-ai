@@ -447,6 +447,19 @@ describe('fallbackBundles', () => {
     ).toEqual([]);
   });
 
+  it.each(['I can take it.', 'I can take that!'])(
+    'recognizes a direct acceptance with terminal punctuation: %s',
+    (acceptance) => {
+      const [bundle] = fallbackBundles({
+        text: `We should prepare the login page, ${acceptance}`,
+        timezone: 'UTC',
+        occurredAt: REFERENCE_DATE,
+        authorUserId: OWNER_ID,
+      });
+      expect(bundle?.items[0]?.title).toBe('Prepare the login page');
+    },
+  );
+
   it('mints a login task from messy event-local phrasing', () => {
     const [bundle] = fallbackBundles({
       text: 'move login to done after qa, ping me if it slips lol',
