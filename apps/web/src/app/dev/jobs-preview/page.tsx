@@ -1,4 +1,5 @@
 import type * as jobRecovery from '@timeline/shared/job-recovery';
+import { JOB_RECOVERY_KINDS } from '@timeline/shared/job-recovery/policy';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
@@ -7,18 +8,9 @@ import { JobsPreviewShell } from '@/components/job-recovery/jobs-preview-shell';
 import { QueryProvider } from '@/components/query-provider';
 
 type JobRecoveryItem = jobRecovery.JobRecoveryItem;
-type JobRecoveryKind = jobRecovery.JobRecoveryKind;
 
 const BULK_PREVIEW_COUNT = 400;
 const BULK_OLDER_COUNT = 8776;
-const PREVIEW_KINDS: JobRecoveryKind[] = [
-  'transcription',
-  'extraction',
-  'embedding',
-  'document_processing',
-  'meeting_finalization',
-  'integration_sync',
-];
 
 export const metadata: Metadata = {
   title: 'Jobs UI preview',
@@ -44,7 +36,7 @@ function previewJob(overrides: Partial<JobRecoveryItem> = {}): JobRecoveryItem {
 
 function bulkPreviewJobs(): JobRecoveryItem[] {
   return Array.from({ length: BULK_PREVIEW_COUNT }, (_, index) => {
-    const kind = PREVIEW_KINDS[index % PREVIEW_KINDS.length] ?? 'extraction';
+    const kind = JOB_RECOVERY_KINDS[index % JOB_RECOVERY_KINDS.length] ?? 'extraction';
     const failed = index % 3 === 0;
     return previewJob({
       id: `job-${String(index + 1)}`,

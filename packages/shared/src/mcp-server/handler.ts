@@ -34,6 +34,11 @@ import {
   type AcceptIngestWebhookEvidenceResult,
   type IngestEvidenceEnqueue,
 } from '#src/ingest-webhooks/accept.js';
+import {
+  searchIntegrationEventsInput,
+  getIntegrationResourceInput,
+  nativeProviderSchema,
+} from '#src/integrations/tool-inputs.js';
 import { childLogger } from '#src/logger.js';
 import { type McpAuthPrincipal, resolveMcpBearer } from '#src/mcp-server/oauth.js';
 import * as objects from '#src/objects/index.js';
@@ -167,9 +172,7 @@ const listCalendarEventsInput = z.object({
 });
 
 const listIntegrationsInput = z.object({
-  provider: z
-    .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry', 'hubspot'])
-    .optional(),
+  provider: nativeProviderSchema.optional(),
 });
 
 const searchDocumentsInput = z.object({
@@ -181,14 +184,6 @@ const searchDocumentsInput = z.object({
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),
   limit: z.number().int().min(1).max(50).optional(),
-});
-
-const searchIntegrationEventsInput = z.object({
-  query: z.string().trim().min(1).max(500),
-  provider: z
-    .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry', 'hubspot'])
-    .optional(),
-  limit: z.number().int().min(1).max(20).optional(),
 });
 
 const askAgentInput = z.object({
@@ -245,9 +240,7 @@ const searchWorkspaceInput = z.object({
   archived: z.boolean().optional(),
   dueAfter: z.iso.datetime().optional(),
   dueBefore: z.iso.datetime().optional(),
-  provider: z
-    .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry', 'hubspot'])
-    .optional(),
+  provider: nativeProviderSchema.optional(),
   boardId: z.string().regex(UUID_RE).optional(),
   templateKind: z.enum(['pipeline', 'task_board', 'catalog', 'custom']).optional(),
   pinned: z.boolean().optional(),
@@ -272,9 +265,7 @@ const getRecordInput = z
     ref: z.string().trim().min(1).max(500).optional(),
     name: z.string().trim().min(1).max(200).optional(),
     kind: z.enum(GET_KINDS).optional(),
-    provider: z
-      .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry', 'hubspot'])
-      .optional(),
+    provider: nativeProviderSchema.optional(),
     externalObjectId: z.string().trim().min(1).max(512).optional(),
     historyLimit: z.number().int().min(1).max(50).optional(),
     momentId: z.string().trim().min(1).max(500).optional(),
@@ -1593,21 +1584,7 @@ async function executeReadCapability(
       };
     }
     case 'timeline.get_integration_resource': {
-      const input = z
-        .object({
-          provider: z.enum([
-            'google_drive',
-            'linear',
-            'github',
-            'monday',
-            'slack',
-            'sentry',
-            'hubspot',
-          ]),
-          externalObjectId: z.string().min(1).max(512),
-          historyLimit: z.number().int().min(1).max(50).optional(),
-        })
-        .parse(args);
+      const input = getIntegrationResourceInput.parse(args);
       const resourceArgs: Parameters<typeof scope.integrations.getIntegrationResource>[0] = {
         provider: input.provider,
         externalObjectId: input.externalObjectId,

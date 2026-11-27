@@ -6,6 +6,7 @@ import {
   observeMondayRemaining,
   reserveMondayCall,
 } from '#src/integrations/monday-budget.js';
+import { NATIVE_PROVIDER_LABELS } from '#src/integrations/provider-labels.js';
 import { providerFetch } from '#src/integrations/request.js';
 import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import { exactTargetSelections } from '#src/integrations/selection-policy.js';
@@ -2807,7 +2808,7 @@ async function syncBoard(
 
 export const mondayProvider: IntegrationProvider = {
   id: 'monday',
-  displayLabel: 'Monday.com',
+  displayLabel: NATIVE_PROVIDER_LABELS.monday,
   syncSelectionPolicy: {
     recovery: 'all',
     resolveTarget(selections, target) {

@@ -1,7 +1,10 @@
+import { NATIVE_PROVIDER_IDS } from '@timeline/db/integration-providers';
 import { z } from 'zod';
 
 import { OBJECT_TYPES } from '#src/objects/types.js';
 import { TASK_CATEGORIES } from '#src/task-categories/types.js';
+
+const connectedProviderSchema = z.enum([...NATIVE_PROVIDER_IDS, 'telegram', 'mcp']);
 
 const boundedCount = z.number().int().min(0).max(1_000_000_000);
 const boundedIdentifier = z.string().min(1).max(160);
@@ -210,17 +213,7 @@ const PRODUCT_EVENT_SCHEMAS = {
     .strict(),
   integration_connected: z
     .object({
-      provider: z.enum([
-        'google_drive',
-        'linear',
-        'hubspot',
-        'github',
-        'monday',
-        'slack',
-        'sentry',
-        'telegram',
-        'mcp',
-      ]),
+      provider: connectedProviderSchema,
     })
     .strict(),
   document_uploaded: z
@@ -301,19 +294,7 @@ const PRODUCT_EVENT_SCHEMAS = {
         'mcp_key_revoke',
       ]),
       kind: z.enum(['native', 'custom_ingest_webhook', 'mcp_inbound', 'mcp_outbound']),
-      provider: z
-        .enum([
-          'google_drive',
-          'linear',
-          'github',
-          'monday',
-          'slack',
-          'sentry',
-          'hubspot',
-          'telegram',
-          'mcp',
-        ])
-        .optional(),
+      provider: connectedProviderSchema.optional(),
     })
     .strict(),
   search_performed: z

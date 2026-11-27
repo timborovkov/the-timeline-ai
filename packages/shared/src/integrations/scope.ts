@@ -5,6 +5,7 @@ import {
   accounts,
   auditLog,
   connectionAttention,
+  connectionAttentionCategory,
   entities,
   integrationAuditLog,
   integrationProviderBudgets,
@@ -23,6 +24,7 @@ import {
   teams,
   users,
 } from '@timeline/db';
+import type { NativeProviderId } from '@timeline/db/integration-providers';
 import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
@@ -124,7 +126,7 @@ export interface CreateIntegrationInput {
 }
 
 export interface UpsertProviderConnectionInput {
-  provider: Exclude<IntegrationProviderName, 'mcp'>;
+  provider: NativeProviderId;
   displayName: string;
   externalAccountId: string;
   scopes?: string[];
@@ -135,13 +137,7 @@ export interface ConnectionAttentionInput {
   providerConnectionId?: string | null;
   integrationId?: string | null;
   resourceShareId?: string | null;
-  category:
-    | 'needs_reconnect'
-    | 'needs_new_owner'
-    | 'access_changed'
-    | 'sync_error'
-    | 'webhook_degraded'
-    | 'access_revoked';
+  category: (typeof connectionAttentionCategory.enumValues)[number];
   summary: string;
 }
 
@@ -153,7 +149,7 @@ export interface ResolveConnectionAttentionInput {
 }
 
 export interface ProviderBudgetKey {
-  provider: Exclude<IntegrationProviderName, 'mcp'>;
+  provider: NativeProviderId;
   appKey: string;
   externalAccountId: string;
   scope: string;
@@ -167,8 +163,6 @@ export interface ResumeIntegrationHealthResult {
   firstFailedAt: Date | null;
   pausedAt: Date | null;
 }
-
-type NativeProviderName = Exclude<IntegrationProviderName, 'mcp'>;
 
 const transientSyncResourceType = 'integration.run';
 const healthResumeBackfillResourceType = 'health.resume_backfill';
@@ -285,14 +279,6 @@ const integrationHealthReset = {
   healthPauseKind: null,
   healthOwnerNotifiedAt: null,
 } as const;
-const connectionAttentionCategoryValues: ConnectionAttentionInput['category'][] = [
-  'needs_reconnect',
-  'needs_new_owner',
-  'access_changed',
-  'sync_error',
-  'webhook_degraded',
-  'access_revoked',
-];
 
 function webhookSubscriptionKey(subscription: {
   resourceKind: string;
@@ -690,7 +676,7 @@ export function createIntegrationScope(deps: {
               eq(connectionAttention.teamId, row.teamId),
               inArray(
                 connectionAttention.category,
-                connectionAttentionCategoryValues.filter(
+                connectionAttentionCategory.enumValues.filter(
                   (category) => category !== 'needs_new_owner',
                 ),
               ),
@@ -2423,7 +2409,7 @@ function configuredBudgetAppKey(value: string | undefined): string | undefined {
   return trimmed;
 }
 
-export function providerBudgetAppKey(provider: NativeProviderName): string {
+export function providerBudgetAppKey(provider: NativeProviderId): string {
   const env = getEnv();
   switch (provider) {
     case 'hubspot':
@@ -3455,7 +3441,7 @@ export async function adminRecordConnectionAttention(
   } else {
     await adminResolveConnectionAttention(db, teamId, {
       ...target,
-      categories: connectionAttentionCategoryValues.filter(
+      categories: connectionAttentionCategory.enumValues.filter(
         (category) => category !== input.category,
       ),
     });

@@ -16,6 +16,12 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./integration-providers": {
+      "types": "./src/integration-providers.ts",
+      "development": "./src/integration-providers.ts",
+      "import": "./dist/integration-providers.js",
+      "default": "./dist/integration-providers.js"
+    },
     "./migrate": {
       "types": "./src/migrate.ts",
       "development": "./src/migrate.ts",

@@ -15,6 +15,10 @@ import { buildWorkspaceTools } from '#src/agent/workspace-tools.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
 import type * as boards from '#src/boards/index.js';
 import { artifactRefCitation } from '#src/citation.js';
+import {
+  searchIntegrationEventsInput,
+  getIntegrationResourceInput,
+} from '#src/integrations/tool-inputs.js';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
 import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
@@ -3141,27 +3145,11 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
     search_integration_events: capabilityTool({
       capability: 'read',
       description:
-        'Semantic search restricted to events synced from connected integrations (Google Drive activity, Linear issue changes, GitHub PR/issue/release events, Monday.com board updates, Slack workspace history, and Sentry issues/releases). Returns event_ids you can cite as [ev:<id>]. Use when the user asks about something that happened in an external system.',
-      inputSchema: z
-        .object({
-          query: z.string().trim().min(1).max(500),
-          provider: z
-            .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry', 'hubspot'])
-            .optional(),
-          limit: z.number().int().min(1).max(20).optional(),
-        })
-        .strict(),
+        'Search events synced from connected native integrations, including repository activity and deal-stage changes. Returns event_ids you can cite as [ev:<id>]. Use when the user asks about something that happened in an external system.',
+      inputSchema: searchIntegrationEventsInput.strict(),
       execute: async (raw) =>
         runSafe('search_integration_events', async () => {
-          const parsed = z
-            .object({
-              query: z.string().trim().min(1).max(500),
-              provider: z
-                .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry', 'hubspot'])
-                .optional(),
-              limit: z.number().int().min(1).max(20).optional(),
-            })
-            .parse(raw);
+          const parsed = searchIntegrationEventsInput.parse(raw);
           const requestedLimit = parsed.limit ?? 10;
           const selectedBoardIds = new Set<string>();
           const selectedDocIds = new Set<string>();
@@ -3231,38 +3219,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       capability: 'read',
       description:
         "Look up the current state of an external object that was synced from a connected integration. Returns the workspace entity (when one exists) plus the most recent integration_event history. Use when the user names a specific external object (e.g. 'ENG-42', 'acme/repo#7', 'Drive file ...') and you want the latest status before answering.",
-      inputSchema: z
-        .object({
-          provider: z.enum([
-            'google_drive',
-            'linear',
-            'github',
-            'monday',
-            'slack',
-            'sentry',
-            'hubspot',
-          ]),
-          externalObjectId: z.string().min(1).max(512),
-          historyLimit: z.number().int().min(1).max(50).optional(),
-        })
-        .strict(),
+      inputSchema: getIntegrationResourceInput.strict(),
       execute: async (raw) =>
         runSafe('get_integration_resource', async () => {
-          const parsed = z
-            .object({
-              provider: z.enum([
-                'google_drive',
-                'linear',
-                'github',
-                'monday',
-                'slack',
-                'sentry',
-                'hubspot',
-              ]),
-              externalObjectId: z.string().min(1).max(512),
-              historyLimit: z.number().int().min(1).max(50).optional(),
-            })
-            .parse(raw);
+          const parsed = getIntegrationResourceInput.parse(raw);
           const args: Parameters<typeof scope.integrations.getIntegrationResource>[0] = {
             provider: parsed.provider,
             externalObjectId: parsed.externalObjectId,

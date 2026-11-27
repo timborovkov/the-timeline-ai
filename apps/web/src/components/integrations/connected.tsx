@@ -1,6 +1,11 @@
 'use client';
 
-import { formatHealthPauseNotice, healthPauseAction } from '@timeline/shared/integrations/health';
+import type { connectionAttentionCategory } from '@timeline/db';
+import {
+  formatHealthPauseNotice,
+  healthPauseAction,
+  type IntegrationHealthPauseKind,
+} from '@timeline/shared/integrations/health';
 import { Plug } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useActionState, useId, useState } from 'react';
@@ -32,7 +37,7 @@ interface ConnectedRow {
   lastError: string | null;
   syncPause: { retryAt: string; reason: string; scope: string | null } | null;
   healthPause: {
-    kind: 'access_revoked' | 'connectivity' | 'auth' | 'permanent';
+    kind: IntegrationHealthPauseKind;
     pausedAt: string;
     firstFailedAt: string | null;
   } | null;
@@ -43,13 +48,7 @@ interface ConnectedRow {
 
 interface ConnectedAttention {
   id: string;
-  category:
-    | 'needs_reconnect'
-    | 'needs_new_owner'
-    | 'access_changed'
-    | 'sync_error'
-    | 'webhook_degraded'
-    | 'access_revoked';
+  category: (typeof connectionAttentionCategory.enumValues)[number];
   summary: string;
   lastSeenAt: string;
 }

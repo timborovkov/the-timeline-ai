@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 import { getEnv } from '#src/env.js';
+import { NATIVE_PROVIDER_LABELS } from '#src/integrations/provider-labels.js';
 import { providerFetch } from '#src/integrations/request.js';
 import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import { exactTargetSelections } from '#src/integrations/selection-policy.js';
@@ -697,7 +698,7 @@ export function verifyLinearSignature(body: string, signature: string | null): b
 
 export const linearProvider: IntegrationProvider = {
   id: 'linear',
-  displayLabel: 'Linear',
+  displayLabel: NATIVE_PROVIDER_LABELS.linear,
   syncSelectionPolicy: {
     recovery: 'shared_cursor',
     resolveTarget(selections, target) {

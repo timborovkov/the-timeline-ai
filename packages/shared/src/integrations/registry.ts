@@ -1,4 +1,7 @@
+import { isNativeProviderId } from '@timeline/db/integration-providers';
+
 import { getEnv } from '#src/env.js';
+import { NATIVE_PROVIDER_LABELS } from '#src/integrations/provider-labels.js';
 import { githubProvider } from '#src/integrations/providers/github.js';
 import { googleDriveProvider } from '#src/integrations/providers/google-drive.js';
 import { hubspotProvider } from '#src/integrations/providers/hubspot.js';
@@ -48,7 +51,7 @@ const _registry: Record<NativeProviderId, IntegrationProvider> = {
 };
 
 export function getProvider(id: string): IntegrationProvider {
-  if (!isRegistryProviderId(id)) throw new Error(`Unknown integration provider: ${id}`);
+  if (!isNativeProviderId(id)) throw new Error(`Unknown integration provider: ${id}`);
   const provider = _registry[id];
   const provisionWebhooks = provider.provisionWebhooks?.bind(provider);
   const deprovisionWebhook = provider.deprovisionWebhook?.bind(provider);
@@ -128,10 +131,6 @@ export function getProvider(id: string): IntegrationProvider {
   };
 }
 
-function isRegistryProviderId(id: string): id is NativeProviderId {
-  return Object.hasOwn(_registry, id);
-}
-
 export function listRegisteredNativeProviderIds(): NativeProviderId[] {
   return (Object.keys(_registry) as NativeProviderId[]).sort();
 }
@@ -197,7 +196,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   // ─────────────────────── Native adapters ───────────────────────────
   {
     id: 'github',
-    label: 'GitHub',
+    label: NATIVE_PROVIDER_LABELS.github,
     description:
       'Capture repository activity. Import issues and track merged pull requests on a board.',
     logo: '/connectors/github.svg',
@@ -214,7 +213,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   },
   {
     id: 'linear',
-    label: 'Linear',
+    label: NATIVE_PROVIDER_LABELS.linear,
     description:
       'Issues, comments, status / assignee / priority changes, and projects sync as cited events and work-artifact evidence.',
     logo: '/connectors/linear.svg',
@@ -231,7 +230,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   },
   {
     id: 'google_drive',
-    label: 'Google Drive',
+    label: NATIVE_PROVIDER_LABELS.google_drive,
     description:
       'Selected Drive folders and files become cited timeline events after a quiet editing window. Timeline keeps the latest extracted text to detect changes, then deletes it on disconnect or file removal.',
     logo: '/connectors/google-drive.svg',
@@ -248,7 +247,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   },
   {
     id: 'monday',
-    label: 'Monday.com',
+    label: NATIVE_PROVIDER_LABELS.monday,
     description:
       'Native workspace sync: boards, records, subitems, updates, column activity, and WorkDocs become cited events.',
     logo: '/connectors/monday.svg',
@@ -265,7 +264,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   },
   {
     id: 'slack',
-    label: 'Slack',
+    label: NATIVE_PROVIDER_LABELS.slack,
     description:
       'Native workspace sync: selected channels, threads, files, reactions, and edits become cited events.',
     logo: '/connectors/slack.svg',
@@ -282,7 +281,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   },
   {
     id: 'sentry',
-    label: 'Sentry',
+    label: NATIVE_PROVIDER_LABELS.sentry,
     description:
       'Native issue sync: issue updates, resolved issues, and releases become cited events and incident evidence.',
     logo: '/connectors/sentry.svg',
@@ -384,7 +383,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
 
   {
     id: 'hubspot',
-    label: 'HubSpot',
+    label: NATIVE_PROVIDER_LABELS.hubspot,
     description: 'Capture deals, associated companies, and stage changes from selected pipelines.',
     logo: '/connectors/hubspot.svg',
     category: 'crm',
@@ -613,7 +612,7 @@ export function listFeaturedCatalog(): CatalogEntry[] {
  * this list with `available: false` so the UI can disclose them quietly.
  */
 export interface LegacyCatalogEntry {
-  id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry' | 'hubspot';
+  id: NativeProviderId;
   label: string;
   description: string;
   logo: string;

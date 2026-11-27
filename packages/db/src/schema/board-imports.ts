@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { inArray, sql } from 'drizzle-orm';
 import {
   boolean,
   check,
@@ -14,6 +14,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { BOARD_IMPORT_PROVIDERS } from '#src/integration-providers.js';
 import { boards, boardItems } from '#src/schema/boards.js';
 import { entities } from '#src/schema/entities.js';
 import { rawEvents } from '#src/schema/raw-events.js';
@@ -42,7 +43,10 @@ export const boardImportRules = pgTable(
   (t) => [
     unique().on(t.teamId, t.provider, t.externalAccountId, t.resourceId),
     unique().on(t.teamId, t.id),
-    check('board_import_rules_provider_check', sql`${t.provider} in ('github','hubspot')`),
+    check(
+      'board_import_rules_provider_check',
+      inArray(t.provider, [...BOARD_IMPORT_PROVIDERS]).inlineParams(),
+    ),
     foreignKey({
       columns: [t.teamId, t.boardId],
       foreignColumns: [boards.teamId, boards.id],

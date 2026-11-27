@@ -1,3 +1,4 @@
+import type { NativeProviderId } from '@timeline/db/integration-providers';
 export interface EventListFilters {
   authorUserId?: string | string[];
   personObjectId?: string;
@@ -48,7 +49,7 @@ export interface TimelineSourceFacet {
 }
 
 export interface ListIntegrationSearchEventIdsInput {
-  provider?: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry' | 'hubspot';
+  provider?: NativeProviderId;
   mondayBoardIds?: string[];
   mondayDocIds?: string[];
   limit: number;

@@ -13,6 +13,7 @@ export interface ResourceShareLike {
 const KIND_LABELS: Record<string, string> = {
   'github.org': 'GitHub organization',
   'github.repo': 'GitHub repository',
+  'hubspot.pipeline': 'HubSpot pipeline',
   'linear.team': 'Linear team',
   'drive.folder': 'Google Drive folder',
   'drive.file': 'Google Drive file',
@@ -24,18 +25,7 @@ const KIND_LABELS: Record<string, string> = {
   'sentry.project': 'Sentry project',
 };
 
-const PROVIDER_LABELS: Record<string, string> = {
-  google_drive: 'Google Drive',
-  linear: 'Linear',
-  github: 'GitHub',
-  monday: 'Monday.com',
-  slack: 'Slack',
-  sentry: 'Sentry',
-};
-
-export function providerLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? provider;
-}
+export { nativeProviderLabel as providerLabel } from '@timeline/shared/integrations/provider-labels';
 
 export function resourceKindLabel(kind: string): string {
   return KIND_LABELS[kind] ?? kind.replace(/[._]/g, ' ');

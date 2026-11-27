@@ -1,3 +1,4 @@
+import { NATIVE_PROVIDER_IDS } from '@timeline/db/integration-providers';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
@@ -97,11 +98,19 @@ describe('POST /api/integrations/[provider]/start', () => {
     expect(input.state).toEqual(expect.any(String));
   });
 
-  it('allows priority native providers through the generic OAuth start route', async () => {
-    const response = await POST(request(), { params: Promise.resolve({ provider: 'monday' }) });
-
+  it.each(NATIVE_PROVIDER_IDS)('starts native OAuth for %s', async (provider) => {
+    const response = await POST(request(), { params: Promise.resolve({ provider }) });
     expect(response.status).toBe(200);
     const [[input]] = fakes.startOAuth.mock.calls as unknown as [[StartOAuthInput]];
-    expect(input.redirectUri).toBe(`${PUBLIC_ORIGIN}/api/integrations/monday/callback`);
+    expect(input.redirectUri).toBe(`${PUBLIC_ORIGIN}/api/integrations/${provider}/callback`);
   });
+
+  it.each(['mcp', 'telegram', 'unknown'])(
+    'rejects %s on the native OAuth route',
+    async (provider) => {
+      const response = await POST(request(), { params: Promise.resolve({ provider }) });
+      expect(response.status).toBe(404);
+      expect(fakes.getProvider).not.toHaveBeenCalled();
+    },
+  );
 });

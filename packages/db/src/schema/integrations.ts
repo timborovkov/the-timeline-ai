@@ -14,6 +14,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { NATIVE_PROVIDER_IDS } from '#src/integration-providers.js';
 import { entities } from '#src/schema/entities.js';
 import { eventVisibility } from '#src/schema/raw-events.js';
 import { rawEvents } from '#src/schema/raw-events.js';
@@ -35,16 +36,7 @@ const bytea = customType<{ data: Buffer; default: false }>({
   },
 });
 
-export const integrationProvider = pgEnum('integration_provider', [
-  'google_drive',
-  'linear',
-  'github',
-  'monday',
-  'slack',
-  'sentry',
-  'hubspot',
-  'mcp',
-]);
+export const integrationProvider = pgEnum('integration_provider', [...NATIVE_PROVIDER_IDS, 'mcp']);
 
 export const connectionAttentionCategory = pgEnum('connection_attention_category', [
   'needs_reconnect',

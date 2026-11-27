@@ -53,6 +53,12 @@
       "import": "./dist/integrations/health.js",
       "default": "./dist/integrations/health.js"
     },
+    "./integrations/provider-labels": {
+      "types": "./src/integrations/provider-labels.ts",
+      "development": "./src/integrations/provider-labels.ts",
+      "import": "./dist/integrations/provider-labels.js",
+      "default": "./dist/integrations/provider-labels.js"
+    },
     "./integrations/registry": {
       "types": "./src/integrations/registry.ts",
       "development": "./src/integrations/registry.ts",

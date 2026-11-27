@@ -29,19 +29,17 @@ import {
 } from 'drizzle-orm';
 
 import { isProviderCooldownErrorMessage } from '#src/integrations/types.js';
-import { RECOVERY_STALE_AFTER_MS } from '#src/job-recovery/policy.js';
+import {
+  isJobRecoveryKind,
+  RECOVERY_STALE_AFTER_MS,
+  type JobRecoveryKind,
+} from '#src/job-recovery/policy.js';
 import * as queue from '#src/queue/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
 type TeamRole = 'owner' | 'admin' | 'member';
 
-export type JobRecoveryKind =
-  | 'transcription'
-  | 'extraction'
-  | 'embedding'
-  | 'document_processing'
-  | 'meeting_finalization'
-  | 'integration_sync';
+export type { JobRecoveryKind } from '#src/job-recovery/policy.js';
 
 export type JobRecoveryArtifactKind =
   | 'raw_event'
@@ -1785,7 +1783,7 @@ function decodeRecoveryId(id: string): EncodedRecoveryId {
     Buffer.from(id, 'base64url').toString('utf8'),
   ) as Partial<EncodedRecoveryId>;
   if (
-    !isKind(parsed.kind) ||
+    !isJobRecoveryKind(parsed.kind) ||
     !isArtifactKind(parsed.artifactKind) ||
     typeof parsed.artifactId !== 'string'
   ) {
@@ -1802,17 +1800,6 @@ function decodeRecoveryId(id: string): EncodedRecoveryId {
       ? { syncKind: parsed.syncKind }
       : {}),
   };
-}
-
-function isKind(v: unknown): v is JobRecoveryKind {
-  return (
-    v === 'transcription' ||
-    v === 'extraction' ||
-    v === 'embedding' ||
-    v === 'document_processing' ||
-    v === 'meeting_finalization' ||
-    v === 'integration_sync'
-  );
 }
 
 function isArtifactKind(v: unknown): v is JobRecoveryArtifactKind {

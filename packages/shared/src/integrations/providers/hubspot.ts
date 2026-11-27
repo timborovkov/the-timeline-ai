@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 import { getEnv } from '#src/env.js';
+import { NATIVE_PROVIDER_LABELS } from '#src/integrations/provider-labels.js';
 import { providerFetch } from '#src/integrations/request.js';
 import {
   defineResourceAccess,
@@ -398,7 +399,7 @@ async function sync({ tokens, integration, selections, ctx }: SyncInput) {
 
 export const hubspotProvider: IntegrationProvider = {
   id: 'hubspot',
-  displayLabel: 'HubSpot',
+  displayLabel: NATIVE_PROVIDER_LABELS.hubspot,
   syncSelectionPolicy: { recovery: 'per_resource', resolveTarget: exactTargetSelections },
   startOAuth({ state, redirectUri }) {
     const url = new URL('https://app.hubspot.com/oauth/authorize');

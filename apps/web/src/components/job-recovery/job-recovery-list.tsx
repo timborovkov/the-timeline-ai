@@ -1,6 +1,7 @@
 'use client';
 
 import type * as jobRecovery from '@timeline/shared/job-recovery';
+import { JOB_RECOVERY_KINDS } from '@timeline/shared/job-recovery/policy';
 import { Archive, CheckCircle2, CircleAlert, LoaderCircle, RotateCcw, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
@@ -82,14 +83,18 @@ type JobRecoveryUiAction =
   | { type: 'retryQueued'; id: string; startedAt: number }
   | { type: 'retryQueuedMany'; ids: string[]; startedAt: number };
 
+const FILTER_LABELS: Record<JobRecoveryKind, string> = {
+  transcription: 'Transcription',
+  extraction: 'Extraction',
+  embedding: 'Embedding',
+  document_processing: 'Documents',
+  meeting_finalization: 'Meetings',
+  integration_sync: 'Integrations',
+};
+
 const FILTERS: { kind: JobRecoveryKind | 'all'; label: string }[] = [
   { kind: 'all', label: 'All' },
-  { kind: 'transcription', label: 'Transcription' },
-  { kind: 'extraction', label: 'Extraction' },
-  { kind: 'embedding', label: 'Embedding' },
-  { kind: 'document_processing', label: 'Documents' },
-  { kind: 'meeting_finalization', label: 'Meetings' },
-  { kind: 'integration_sync', label: 'Integrations' },
+  ...JOB_RECOVERY_KINDS.map((kind) => ({ kind, label: FILTER_LABELS[kind] })),
 ];
 
 const initialJobRecoveryUiState: JobRecoveryUiState = {

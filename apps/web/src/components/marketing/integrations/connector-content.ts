@@ -1,24 +1,14 @@
+import type { NativeProviderId } from '@timeline/db/integration-providers';
+import { NATIVE_PROVIDER_LABELS } from '@timeline/shared/integrations/provider-labels';
 import { listCatalog } from '@timeline/shared/integrations/registry';
 import type { CatalogEntry } from '@timeline/shared/integrations/registry';
 
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import type { MarketingScreenshotSlot } from '@/components/marketing/screenshot-slot';
 import { GOOGLE_DRIVE_LIMITED_USE_POLICY } from '@/lib/google-drive-limited-use';
+import type { NativeIngestionProvider as ConnectorSlug } from '@/lib/public-site/types';
 
-export const CONNECTOR_SLUGS = [
-  'slack',
-  'github',
-  'linear',
-  'google-drive',
-  'monday',
-  'sentry',
-  'hubspot',
-] as const;
-
-type ConnectorSlug = (typeof CONNECTOR_SLUGS)[number];
-
-type NativeProviderId =
-  'slack' | 'github' | 'linear' | 'google_drive' | 'monday' | 'sentry' | 'hubspot';
+export { NATIVE_INGESTION_PROVIDERS as CONNECTOR_SLUGS } from '@/lib/public-site/types';
 
 interface ConnectorRecord {
   label: string;
@@ -95,7 +85,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
   {
     slug: 'slack',
     providerId: 'slack',
-    name: 'Slack',
+    name: NATIVE_PROVIDER_LABELS.slack,
     eyebrow: 'Conversation becomes chronology',
     hero: 'Keep the decisions beyond the thread.',
     intro: 'Bring selected Slack conversations into the work record alongside your other sources.',
@@ -198,7 +188,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
   {
     slug: 'github',
     providerId: 'github',
-    name: 'GitHub',
+    name: NATIVE_PROVIDER_LABELS.github,
     eyebrow: 'Code activity becomes release history',
     hero: 'Connect what shipped to why it mattered.',
     intro:
@@ -305,7 +295,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
   {
     slug: 'linear',
     providerId: 'linear',
-    name: 'Linear',
+    name: NATIVE_PROVIDER_LABELS.linear,
     eyebrow: 'Issue movement becomes a work narrative',
     hero: 'Keep the reason behind the status.',
     intro: 'Connect selected Linear activity to the conversations and code that explain it.',
@@ -404,7 +394,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
   {
     slug: 'google-drive',
     providerId: 'google_drive',
-    name: 'Google Drive',
+    name: NATIVE_PROVIDER_LABELS.google_drive,
     eyebrow: 'File change becomes durable evidence',
     hero: 'Keep the context behind the document.',
     intro:
@@ -504,7 +494,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
   {
     slug: 'monday',
     providerId: 'monday',
-    name: 'Monday.com',
+    name: NATIVE_PROVIDER_LABELS.monday,
     eyebrow: 'Board activity becomes an evidence trail',
     hero: 'See the work beyond the board.',
     intro:
@@ -604,7 +594,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
   {
     slug: 'sentry',
     providerId: 'sentry',
-    name: 'Sentry',
+    name: NATIVE_PROVIDER_LABELS.sentry,
     eyebrow: 'Issue lifecycle becomes incident context',
     hero: 'Follow the incident through the fix.',
     intro:
@@ -706,7 +696,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
   {
     slug: 'hubspot',
     providerId: 'hubspot',
-    name: 'HubSpot',
+    name: NATIVE_PROVIDER_LABELS.hubspot,
     eyebrow: 'Deal pipelines',
     hero: 'Follow a HubSpot deal on your board.',
     intro:

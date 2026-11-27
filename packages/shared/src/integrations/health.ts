@@ -1,3 +1,5 @@
+import { nativeProviderLabel } from '#src/integrations/provider-labels.js';
+
 export const INTEGRATION_HEALTH_PAUSE_KINDS = [
   'access_revoked',
   'connectivity',
@@ -33,25 +35,13 @@ const PERMANENT_RE =
   /\b(?:410|451)\b|permanently(?:\s+\w+)?(?:\s+deleted)?|account suspended|application has been blocked|this app has been blocked/i;
 const TRANSIENT_RE = /\b(?:408|500|502|503|504|temporarily overloaded|try again later)\b/i;
 
-const PROVIDER_LABELS: Record<string, string> = {
-  google_drive: 'Google Drive',
-  linear: 'Linear',
-  github: 'GitHub',
-  hubspot: 'HubSpot',
-  monday: 'Monday.com',
-  slack: 'Slack',
-  sentry: 'Sentry',
-};
-
 export function isIntegrationHealthPauseKind(
   value: string | null | undefined,
 ): value is IntegrationHealthPauseKind {
   return (INTEGRATION_HEALTH_PAUSE_KINDS as readonly string[]).includes(value ?? '');
 }
 
-export function integrationHealthProviderLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? provider;
-}
+export { nativeProviderLabel as integrationHealthProviderLabel } from '#src/integrations/provider-labels.js';
 
 export function classifyIntegrationHealthFailure(message: string): IntegrationHealthClassification {
   if (RATE_LIMIT_RE.test(message)) return { counted: false, reason: 'rate_limited' };
@@ -108,7 +98,7 @@ export function formatHealthPauseNotice(input: {
   now?: Date;
   providerLabel?: string;
 }): string {
-  const label = input.providerLabel ?? integrationHealthProviderLabel(input.provider);
+  const label = input.providerLabel ?? nativeProviderLabel(input.provider);
   if (input.kind === 'access_revoked') return `Paused: ${label} access was revoked.`;
   if (input.kind === 'auth') return `Paused: ${label} needs to be reconnected.`;
   if (input.kind === 'permanent') return `Paused: ${label} returned a permanent error.`;

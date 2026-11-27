@@ -18,6 +18,7 @@ describe('resource labels', () => {
     expect(providerLabel('monday')).toBe('Monday.com');
     expect(providerLabel('slack')).toBe('Slack');
     expect(providerLabel('sentry')).toBe('Sentry');
+    expect(providerLabel('hubspot')).toBe('HubSpot');
     expect(providerLabel('unknown')).toBe('unknown');
   });
 

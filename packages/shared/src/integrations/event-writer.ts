@@ -14,6 +14,7 @@ import {
   slackConversationBindings,
   slackWorkspaces,
 } from '@timeline/db';
+import { isBoardImportProvider } from '@timeline/db/integration-providers';
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
 import {
@@ -481,7 +482,7 @@ export async function writeIntegrationEvents(deps: {
   const managedEvents = new Set<string>();
   const { provider, externalAccountId, connectedByUserId } = deps.integration;
   if (
-    (provider === 'github' || provider === 'hubspot') &&
+    isBoardImportProvider(provider) &&
     externalAccountId &&
     connectedByUserId &&
     activeWritableEvents.length

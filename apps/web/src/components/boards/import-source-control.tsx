@@ -1,5 +1,6 @@
 'use client';
 import type * as boards from '@timeline/shared/boards';
+import { nativeProviderLabel } from '@timeline/shared/integrations/provider-labels';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
@@ -13,7 +14,7 @@ export function ImportSourceControl({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState('');
-  const provider = source.provider === 'github' ? 'GitHub' : 'HubSpot';
+  const provider = nativeProviderLabel(source.provider);
   const field =
     source.field === 'lane' ? 'stage' : source.field === 'status' ? 'status' : 'source link';
   const label =

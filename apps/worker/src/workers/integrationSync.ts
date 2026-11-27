@@ -477,12 +477,6 @@ function withoutReplayMetadataAliases(metadata: Record<string, unknown>): Record
   return result;
 }
 
-function isNativeSyncProvider(
-  provider: integrationsLib.IntegrationProviderName,
-): provider is NativeSyncProvider {
-  return integrationsLib.isNativeProviderId(provider);
-}
-
 function countedHealthKind(message: string): integrationsLib.IntegrationHealthPauseKind | null {
   const classified = integrationsLib.classifyIntegrationHealthFailure(message);
   return classified.counted ? classified.kind : null;
@@ -609,8 +603,8 @@ function providerRateLimitPause(err: unknown): {
         ? record.code
         : 'provider_rate_limited';
   const provider =
-    typeof record.provider === 'string' && record.provider !== 'mcp'
-      ? (record.provider as NativeSyncProvider)
+    typeof record.provider === 'string' && integrationsLib.isNativeProviderId(record.provider)
+      ? record.provider
       : typeof record.code === 'string' && record.code === 'github_rate_limited'
         ? 'github'
         : undefined;
@@ -654,7 +648,7 @@ async function loadFirstProviderBudgetPause(
   integration: integrationsLib.IntegrationRow,
   tokens: Record<string, unknown> | null,
 ): Promise<{ retryAt: Date; reason: string; scope: string } | null> {
-  if (!isNativeSyncProvider(integration.provider)) return null;
+  if (!integrationsLib.isNativeProviderId(integration.provider)) return null;
   for (const scope of integrationsLib.providerSyncPolicy(integration.provider).budgetScopes) {
     const budgetKeys = integrationsLib.providerBudgetKeysForIntegration(integration, scope, tokens);
     for (const budgetKey of budgetKeys) {
@@ -1603,7 +1597,7 @@ export async function handleTick(db: Db): Promise<void> {
 
   const all = await integrationsLib.adminListEnabledIntegrations(db);
   for (const i of all) {
-    if (!isNativeSyncProvider(i.provider)) continue;
+    if (!integrationsLib.isNativeProviderId(i.provider)) continue;
     const provider = i.provider;
     if (!integrationsLib.providerRecoveryEnabled(provider)) continue;
     if (i.healthPausedAt) {

@@ -18,6 +18,11 @@ import {
   teamProviderResourceShares,
   type Db,
 } from '@timeline/db';
+import {
+  BOARD_IMPORT_PROVIDERS,
+  isBoardImportProvider,
+  type BoardImportProvider,
+} from '@timeline/db/integration-providers';
 import { and, arrayOverlaps, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -58,7 +63,14 @@ export interface BoardImportPreviewRow {
   target: string | null;
   eventId: string;
 }
-const sourceKind = { github: 'github.repo', hubspot: 'hubspot.pipeline' } as const;
+const sourceKind = { github: 'github.repo', hubspot: 'hubspot.pipeline' } as const satisfies Record<
+  BoardImportProvider,
+  string
+>;
+function isBoardImportSource(source: { provider: string; kind: string }) {
+  return isBoardImportProvider(source.provider) && source.kind === sourceKind[source.provider];
+}
+
 function eligible(
   record: ImportRecord,
   rule: Pick<Rule, 'importIssues' | 'mergedPrs' | 'mergesSince'>,
@@ -93,7 +105,7 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
           eq(integrations.enabled, true),
           eq(integrations.visibilityDefault, 'team'),
           eq(integrationSelections.visibility, 'team'),
-          inArray(integrations.provider, ['github', 'hubspot']),
+          inArray(integrations.provider, [...BOARD_IMPORT_PROVIDERS]),
           id ? eq(integrations.id, id) : undefined,
           or(
             isNull(integrations.providerConnectionId),
@@ -140,10 +152,7 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
   }
   async function source(query: Db, config: Config) {
     const selected = (await sources(query, config.integrationId)).find(
-      (s) =>
-        s.resource === config.resource &&
-        (s.provider === 'github' || s.provider === 'hubspot') &&
-        s.kind === sourceKind[s.provider],
+      (s) => s.resource === config.resource && isBoardImportSource(s),
     );
     if (!selected?.account)
       throw new Error('Select an active team-visible repository or pipeline.');
@@ -933,29 +942,27 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
             )
         : [];
       return {
-        sources: available
-          .filter((s) => s.kind === 'github.repo' || s.kind === 'hubspot.pipeline')
-          .map((s) => {
-            const rule = rules.find(
-              (r) =>
-                r.externalAccountId === s.account &&
-                r.provider === s.provider &&
-                r.resourceId === s.resource,
-            );
-            return {
-              ...s,
-              settings: rule
-                ? {
-                    boardId: rule.boardId,
-                    projectId: rule.projectId,
-                    issues: rule.importIssues,
-                    merges: rule.mergedPrs,
-                    history: rule.mergesSince.getTime() === 0,
-                    stageLanes: rule.stageLanes,
-                  }
-                : null,
-            };
-          }),
+        sources: available.filter(isBoardImportSource).map((s) => {
+          const rule = rules.find(
+            (r) =>
+              r.externalAccountId === s.account &&
+              r.provider === s.provider &&
+              r.resourceId === s.resource,
+          );
+          return {
+            ...s,
+            settings: rule
+              ? {
+                  boardId: rule.boardId,
+                  projectId: rule.projectId,
+                  issues: rule.importIssues,
+                  merges: rule.mergedPrs,
+                  history: rule.mergesSince.getTime() === 0,
+                  stageLanes: rule.stageLanes,
+                }
+              : null,
+          };
+        }),
         boards: visibleBoards,
         projects,
       };
@@ -1078,13 +1085,7 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
             stageLanes: rule.stageLanes,
           };
 
-          if (
-            !authorized.some(
-              (s) =>
-                s.resource === rule.resourceId &&
-                (s.kind === 'github.repo' || s.kind === 'hubspot.pipeline'),
-            )
-          )
+          if (!authorized.some((s) => s.resource === rule.resourceId && isBoardImportSource(s)))
             continue;
           const [destination] = await query
             .select()

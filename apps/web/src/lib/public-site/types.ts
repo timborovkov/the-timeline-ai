@@ -12,11 +12,11 @@ export const PUBLIC_DOCUMENT_KINDS = [
 ] as const;
 
 export const NATIVE_INGESTION_PROVIDERS = [
+  'slack',
   'github',
   'linear',
   'google-drive',
   'monday',
-  'slack',
   'sentry',
   'hubspot',
 ] as const;

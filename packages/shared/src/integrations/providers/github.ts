@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { getEnv } from '#src/env.js';
 import { formatErrorCause } from '#src/http/error-cause.js';
 import { ExternalHttpError } from '#src/http/external-fetch.js';
+import { NATIVE_PROVIDER_LABELS } from '#src/integrations/provider-labels.js';
 import {
   providerFetch,
   providerResponseLimit,
@@ -3076,7 +3077,7 @@ async function expandGithubSelections(
 
 export const githubProvider: IntegrationProvider = {
   id: 'github',
-  displayLabel: 'GitHub',
+  displayLabel: NATIVE_PROVIDER_LABELS.github,
   syncSelectionPolicy: {
     recovery: 'per_resource',
     resolveTarget(selections, target) {
