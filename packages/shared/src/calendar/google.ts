@@ -16,7 +16,7 @@ import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import { assertValidTimezone } from '#src/time/index.js';
 
-export const GOOGLE_CALENDAR_SCOPES = [
+const GOOGLE_CALENDAR_SCOPES = [
   'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
   'https://www.googleapis.com/auth/calendar.events.readonly',
 ] as const;
@@ -155,7 +155,7 @@ const eventPage = z.object({
   nextSyncToken: z.string().optional(),
 });
 
-export function normalizeGoogleCalendarEvent(
+function normalizeGoogleCalendarEvent(
   input: z.infer<typeof providerEvent>,
   fallbackTimezone: string,
 ) {

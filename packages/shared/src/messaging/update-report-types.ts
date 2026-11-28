@@ -1,6 +1,6 @@
 import type { UpdateSection, UpdateSettings } from '#src/messaging/update-settings.js';
 
-export interface UpdateReportLink {
+interface UpdateReportLink {
   label: string;
   href: string;
 }

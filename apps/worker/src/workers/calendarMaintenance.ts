@@ -87,7 +87,7 @@ export async function processCalendarMaintenance(db: Db, now = new Date()) {
   return { reminders };
 }
 
-export async function processGoogleCalendarImports(db: Db, now = new Date()) {
+async function processGoogleCalendarImports(db: Db, now = new Date()) {
   const imports = await db
     .select({ teamId: googleCalendarImports.teamId, userId: googleCalendarImports.userId })
     .from(googleCalendarImports)

@@ -23,7 +23,7 @@ export interface CommunicationNode {
   dueAt?: string | null;
 }
 /** Expectations are complete; omission must never silently disable field scoring. */
-export interface CommunicationExpectedNode extends CommunicationNode {
+interface CommunicationExpectedNode extends CommunicationNode {
   status: string;
   assignee: Actor | null;
   dueAt: string | null;
@@ -67,7 +67,7 @@ export interface ObservedNode {
   assigneeUserId: string | null;
   dueAt: string | null;
 }
-export interface ObservedEdge {
+interface ObservedEdge {
   from: string;
   to: string;
   kind: string;
