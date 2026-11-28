@@ -5,11 +5,13 @@ import { afterEach, it } from 'bun:test';
 
 import { ImportForm } from '@/app/app/connections/import/import-form';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 it('previews and confirms Linear issues without requiring a pipeline stage or project', async () => {
   const request = vi
-    .fn()
+    .fn<typeof fetch>()
     .mockResolvedValueOnce(
       Response.json({
         revision: 'first-preview',
@@ -49,7 +51,9 @@ it('previews and confirms Linear issues without requiring a pipeline stage or pr
   expect(await screen.findByText('Same Linear issue ID')).toBeTruthy();
   await user.click(screen.getByRole('button', { name: 'Confirm and keep in sync' }));
   expect(await screen.findByText(/Import saved/)).toBeTruthy();
-  expect(JSON.parse(request.mock.calls[1]?.[1].body)).toMatchObject({
+  const body = request.mock.calls[1]?.[1]?.body;
+  if (typeof body !== 'string') throw new Error('Expected confirmation JSON');
+  expect(JSON.parse(body)).toMatchObject({
     action: 'confirm',
     revision: 'first-preview',
     config: {
