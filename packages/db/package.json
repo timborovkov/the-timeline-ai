@@ -64,7 +64,7 @@
     "postgres": "^4.1.1"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.16",
+    "@electric-sql/pglite": "^0.5.17",
     "@types/node": "^24.19.2",
     "drizzle-kit": "^0.31.11",
     "@typescript/native": "npm:typescript@7.0.2",

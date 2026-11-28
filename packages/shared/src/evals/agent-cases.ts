@@ -9,14 +9,14 @@ export const AGENT_SCENARIOS = [
   'permission-boundaries',
   'tool-failures',
 ] as const;
-export type AgentScenario = (typeof AGENT_SCENARIOS)[number];
-export interface AgentEvidence {
+type AgentScenario = (typeof AGENT_SCENARIOS)[number];
+interface AgentEvidence {
   text: string;
   occurredAt: string;
   access: 'team' | 'private' | 'restricted' | 'foreign';
   documentVersion?: number;
 }
-export interface ExpectedClaim {
+interface ExpectedClaim {
   value: string;
   state: 'approved' | 'proposed' | 'reported' | 'historical';
   evidence: number[];
