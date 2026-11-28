@@ -1,4 +1,5 @@
 'use server';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { childLogger } from '@timeline/shared/logger';
 import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
@@ -13,7 +14,6 @@ import { runSentryServerAction } from '@/lib/sentry-action';
 import { visibilitySchema } from '@/lib/visibility';
 
 const log = childLogger('web:actions:visibility');
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const sourceSchema = z.enum([
   'team',

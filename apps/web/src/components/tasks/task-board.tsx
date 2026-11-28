@@ -13,6 +13,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { useQueries } from '@tanstack/react-query';
+import { nativeProviderLabel } from '@timeline/shared/integrations/provider-labels';
 import type * as objects from '@timeline/shared/objects/types';
 import { TASK_CATEGORY_OPTIONS, type TaskCategory } from '@timeline/shared/task-categories/types';
 import { GripVertical, ListTodo } from 'lucide-react';
@@ -70,7 +71,7 @@ import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { recoverFromStaleServerAction } from '@/lib/stale-server-action';
 import { statusLabel } from '@/lib/status-labels';
-import { taskDisplayStatus } from '@/lib/task-statuses';
+import { SYNCED_STATUS_LABEL, taskDisplayStatus } from '@/lib/task-statuses';
 import { useReducedMotion } from '@/lib/use-reduced-motion';
 import type { SaveState } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -716,7 +717,7 @@ function useTaskBoardController({
     const status = event.over?.id ? String(event.over.id) : null;
     if (!status || activeSavingCardIds().has(id)) return;
     const row = effectiveRows.find((candidate) => candidate.id === id);
-    if (!row || taskDisplayStatus(row.status) === status) return;
+    if (!row || row.statusSource || taskDisplayStatus(row.status) === status) return;
     const previousStatusPatch = rowPatches[id]?.patch.status;
     const previousStatusBaseline = rowPatches[id]?.baseline.status;
     startTransition(async () => {
@@ -1394,6 +1395,7 @@ function TaskListView({
   return (
     <div data-task-list className="flex h-full min-h-0 flex-1 flex-col">
       <TaskBulkToolbar
+        hasSyncedStatus={rows.some((row) => row.statusSource && selectedIds.has(row.id))}
         columns={columns}
         members={members}
         selectedIds={selectedIds}
@@ -1483,6 +1485,63 @@ function TaskListView({
 }
 
 // react-doctor-disable-next-line react-doctor/no-multi-comp -- Inline row editor is tightly coupled to task board patch semantics and tested through the board.
+function TaskRowStatus({
+  row,
+  columns,
+  saving,
+  onChange,
+}: {
+  row: TaskObjectRow;
+  columns: string[];
+  saving: boolean;
+  onChange: (value: string) => void;
+}) {
+  const title = displayObjectTitle(row);
+  return row.statusSource ? (
+    <span title={syncedStatusReason(row)}>
+      {statusLabel(taskDisplayStatus(row.status))} ·{' '}
+      {row.statusSource === 'locked' ? 'Synced' : nativeProviderLabel(row.statusSource.provider)}
+    </span>
+  ) : (
+    <EditableMetadata density="compact" label={`Status for ${displayText(title)}`} pending={saving}>
+      <EditableMetadata.Value>
+        <CollectionStatus value={row.status} label={statusLabel(taskDisplayStatus(row.status))} />
+      </EditableMetadata.Value>
+      <EditableMetadata.Editor>
+        <select
+          value={taskDisplayStatus(row.status)}
+          onChange={(event) => {
+            onChange(event.currentTarget.value);
+          }}
+          className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+          aria-label="Status"
+        >
+          {columns.map((column) => (
+            <option key={column} value={column}>
+              {statusLabel(column)}
+            </option>
+          ))}
+          {!columns.includes(taskDisplayStatus(row.status)) ? (
+            <option value={row.status}>{statusLabel(row.status)}</option>
+          ) : null}
+        </select>
+      </EditableMetadata.Editor>
+    </EditableMetadata>
+  );
+}
+function syncedStatusReason(row: TaskObjectRow) {
+  if (!row.statusSource) return undefined;
+  return row.statusSource === 'locked'
+    ? SYNCED_STATUS_LABEL
+    : 'Status synced from ' + nativeProviderLabel(row.statusSource.provider);
+}
+function taskDragState(row: TaskObjectRow, saving: boolean) {
+  return {
+    disabled: saving || Boolean(row.statusSource),
+    reason: syncedStatusReason(row),
+  };
+}
+
 function TaskListRow({
   row,
   columns,
@@ -1559,37 +1618,14 @@ function TaskListRow({
         </CollectionRow.Title>
         <CollectionRow.Metadata>
           <>
-            <EditableMetadata
-              density="compact"
-              label={`Status for ${displayText(title)}`}
-              pending={saving === 'status'}
-            >
-              <EditableMetadata.Value>
-                <CollectionStatus
-                  value={row.status}
-                  label={statusLabel(taskDisplayStatus(row.status))}
-                />
-              </EditableMetadata.Value>
-              <EditableMetadata.Editor>
-                <select
-                  value={taskDisplayStatus(row.status)}
-                  onChange={(event) => {
-                    save('status', { status: event.currentTarget.value });
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  aria-label="Status"
-                >
-                  {columns.map((column) => (
-                    <option key={column} value={column}>
-                      {statusLabel(column)}
-                    </option>
-                  ))}
-                  {!columns.includes(taskDisplayStatus(row.status)) ? (
-                    <option value={row.status}>{statusLabel(row.status)}</option>
-                  ) : null}
-                </select>
-              </EditableMetadata.Editor>
-            </EditableMetadata>
+            <TaskRowStatus
+              row={row}
+              columns={columns}
+              saving={saving === 'status'}
+              onChange={(status) => {
+                save('status', { status });
+              }}
+            />
             {taskCategoriesEnabled &&
             (row.taskCategory ||
               row.taskCategoryStatus === 'pending' ||
@@ -1731,6 +1767,7 @@ function TaskListRow({
 
 // react-doctor-disable-next-line react-doctor/no-multi-comp -- Bulk controls are local to the task list view and share the same selected-id contract.
 function TaskBulkToolbar({
+  hasSyncedStatus,
   columns,
   members,
   selectedIds,
@@ -1739,6 +1776,7 @@ function TaskBulkToolbar({
   onUpdateTaskCategories,
   taskCategoriesEnabled,
 }: {
+  hasSyncedStatus: boolean;
   columns: string[];
   members: TaskMemberOption[];
   selectedIds: ReadonlySet<string>;
@@ -1831,7 +1869,9 @@ function TaskBulkToolbar({
               <option value="assignee">Assignee</option>
               <option value="due">Due date</option>
               <option value="priority">Priority</option>
-              <option value="status">Status</option>
+              <option value="status" disabled={hasSyncedStatus}>
+                {hasSyncedStatus ? 'Status (selection includes a synced task)' : 'Status'}
+              </option>
               {taskCategoriesEnabled ? <option value="category">Category</option> : null}
             </select>
             {bulk.field === 'status' ? (
@@ -1917,7 +1957,7 @@ function TaskBulkToolbar({
             ) : null}
             <button
               type="button"
-              disabled={pending}
+              disabled={pending || (bulk.field === 'status' && hasSyncedStatus)}
               onClick={() => void applyBulk()}
               className="h-8 rounded-sm border border-border bg-bg px-3 text-xs font-medium hover:bg-signal-soft disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -2088,10 +2128,11 @@ function TaskCard({
   onProjectChangeReverted: (taskId: string) => void;
   pinned: boolean;
 }) {
+  const drag = taskDragState(row, saving);
   const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } =
     useDraggable({
       id: row.id,
-      disabled: saving,
+      disabled: drag.disabled,
     });
   const style = transform
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
@@ -2128,7 +2169,8 @@ function TaskCard({
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
-          disabled={saving}
+          disabled={drag.disabled}
+          title={drag.reason}
           className="inline-flex size-8 shrink-0 touch-none cursor-grab items-center justify-center rounded-sm text-fg-dim hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing disabled:cursor-progress"
           aria-label={`Drag ${displayText(title)}`}
         >

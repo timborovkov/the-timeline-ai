@@ -13,26 +13,16 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { BOARD_LANE_KINDS, BOARD_TEMPLATE_KINDS } from '#src/contracts/board-kinds.js';
 import { agentSuggestionItems } from '#src/schema/agent-suggestions.js';
 import { entities } from '#src/schema/entities.js';
 import { rawEvents } from '#src/schema/raw-events.js';
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
 
-export const boardTemplateKind = pgEnum('board_template_kind', [
-  'pipeline',
-  'task_board',
-  'catalog',
-  'custom',
-]);
+export const boardTemplateKind = pgEnum('board_template_kind', BOARD_TEMPLATE_KINDS);
 
-export const boardLaneKind = pgEnum('board_lane_kind', [
-  'active',
-  'done',
-  'terminal',
-  'lost',
-  'blocked',
-]);
+export const boardLaneKind = pgEnum('board_lane_kind', BOARD_LANE_KINDS);
 
 export const boardItemChangeActorKind = pgEnum('board_item_change_actor_kind', [
   'user',

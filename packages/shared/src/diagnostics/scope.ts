@@ -8,6 +8,7 @@ import {
   teamMembers,
   type Db,
 } from '@timeline/db';
+import type { TeamRole } from '@timeline/db/contracts/workspace-access';
 import { and, count, desc, eq, gt, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -27,7 +28,7 @@ export function createDiagnosticScope({
   db: Db;
   teamId: string;
   userId: string;
-  ensureMember: (role?: 'member' | 'admin' | 'owner') => Promise<unknown>;
+  ensureMember: (role?: TeamRole) => Promise<unknown>;
 }) {
   const own = and(eq(diagnosticReports.teamId, teamId), eq(diagnosticReports.userId, userId));
   async function currentMember(tx: Pick<Db, 'select'>, admin = false) {

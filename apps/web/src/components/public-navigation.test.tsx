@@ -245,7 +245,7 @@ describe('PublicFooterColumns', () => {
     expect(links).toContainEqual({ name: 'Sentry', href: '/integrations/sentry' });
     expect(links).toContainEqual({ name: 'Connect MCP tools', href: '/integrations/mcp' });
     expect(links.map((link) => link.href)).not.toContain('/integrations/jira');
-    expect(links.map((link) => link.href)).not.toContain('/integrations/hubspot');
+    expect(links.map((link) => link.href)).toContain('/integrations/hubspot');
   });
 });
 

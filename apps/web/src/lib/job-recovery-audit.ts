@@ -1,10 +1,10 @@
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { decodeJobRecoveryTarget, type JobRecoveryKind } from '@timeline/shared/job-recovery';
 
 import { reportCaughtError } from '@/lib/sentry-report';
 
 type RecoveryAuditAction = 'job.retry' | 'job.dismiss';
 type RecoveryAuditOutcome = 'succeeded' | 'rejected';
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function recordRecoveryAuditBestEffort(
   record: () => Promise<void>,

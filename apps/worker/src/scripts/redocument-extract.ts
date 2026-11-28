@@ -19,21 +19,16 @@
  *     [--status=<comma-separated>] [--limit=N] [--dry-run] [--force]
  */
 import { closeDb, documentVersions, getDb } from '@timeline/db';
+import {
+  DOCUMENT_PROCESSING_STATUSES,
+  type DocumentProcessingStatus as ProcessingStatus,
+} from '@timeline/db/contracts/document-kinds';
 import { queue } from '@timeline/shared';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { and, asc, eq, gt, inArray, or, type SQL } from 'drizzle-orm';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAGE_SIZE = 500;
-type ProcessingStatus = 'pending' | 'extracting' | 'chunked' | 'embedded' | 'deferred' | 'failed';
-const VALID_STATUSES: ProcessingStatus[] = [
-  'pending',
-  'extracting',
-  'chunked',
-  'embedded',
-  'deferred',
-  'failed',
-];
 
 interface Args {
   teamId: string;
@@ -58,7 +53,7 @@ function parseArgs(): Args {
         .split(',')
         .map((s) => s.trim());
       const filtered = raw.filter((s): s is ProcessingStatus =>
-        (VALID_STATUSES as string[]).includes(s),
+        (DOCUMENT_PROCESSING_STATUSES as readonly string[]).includes(s),
       );
       if (filtered.length > 0) status = filtered;
     } else if (arg.startsWith('--limit=')) {

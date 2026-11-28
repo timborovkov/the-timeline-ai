@@ -9,10 +9,11 @@ This template is intentionally stricter than "make a provider file." A new
 provider is not ready until its policy, webhook posture, fallback sync path,
 tests, docs, and live canary story are explicit.
 
+For a new chat surface, a webhook-only source, or an optional board workflow on top of native capture, start with [integration surfaces](integration-surfaces.md#add-a-new-integration).
+
 ## 1. Decide The Provider Posture
 
-Add the provider to `NATIVE_PROVIDER_IDS`, `IntegrationProvider['id']`, the
-registry, catalog, and `PROVIDER_SYNC_POLICIES`.
+Add the ID once to the [native provider contract](../packages/db/src/integration-providers.ts). The database enum, OAuth routes, tool validators and default rollout lists use this tuple. Add its [display label](../packages/shared/src/integrations/provider-labels.ts), adapter, catalog entry and sync policy. Enable board imports separately when the provider implements a board workflow.
 
 Choose these fields before writing route code:
 

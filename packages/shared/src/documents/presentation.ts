@@ -1,3 +1,5 @@
+import { UUID_RE } from '#src/identifiers.js';
+
 export interface DocumentPresentationInput {
   name: string;
   contentType?: string | null;
@@ -39,7 +41,7 @@ export function isLikelyGeneratedDocumentName(name: string): boolean {
   if (base.length > 48 && /^[a-z0-9_-]+$/i.test(base)) return true;
   if (base.length > 60 && /^[a-z0-9+/_=-]+$/i.test(base)) return true;
   if (/^[a-f0-9]{24,}$/i.test(base)) return true;
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(base)) {
+  if (UUID_RE.test(base)) {
     return true;
   }
   return false;

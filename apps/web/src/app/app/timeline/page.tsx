@@ -1,4 +1,5 @@
 import { users } from '@timeline/db';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
@@ -67,7 +68,6 @@ interface Props {
   }>;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type SearchParams = Awaited<Props['searchParams']>;
 type TimelineMode = 'moments' | 'events';
 type TimelineUserMap = Map<string, { id: string; name: string | null; email: string }>;

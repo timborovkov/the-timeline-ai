@@ -1,4 +1,5 @@
 import { auditLog, type Db, ingestWebhookCredentials, ingestWebhooks } from '@timeline/db';
+import type { TeamRole } from '@timeline/db/contracts/workspace-access';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 
 import { isTimelineEventClass, type TimelineEventClass } from '#src/event-class.js';
@@ -33,7 +34,7 @@ interface IngestWebhookScopeDeps {
   db: Db;
   teamId: string;
   userId: string;
-  ensureMember: (minRole?: 'member' | 'admin' | 'owner') => Promise<unknown>;
+  ensureMember: (minRole?: TeamRole) => Promise<unknown>;
 }
 
 function eventClassOf(value: string): TimelineEventClass {

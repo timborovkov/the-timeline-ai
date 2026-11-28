@@ -1,9 +1,9 @@
+import { UUID_RE } from '#src/identifiers.js';
+
 export interface TimeIdCursor {
   at: string;
   id: string;
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function encodeCursor(cursor: TimeIdCursor): string {
   return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');

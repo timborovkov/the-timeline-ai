@@ -1,5 +1,6 @@
 import type { SavedWorkViewChange } from '@timeline/db';
 import type { dailyDigests, messageDeliveries } from '@timeline/db';
+import type { TeamRole } from '@timeline/db/contracts/workspace-access';
 
 import type { UpdateReport } from '#src/messaging/update-report-types.js';
 
@@ -52,7 +53,7 @@ export interface SupportRequestMessageInput {
   release: string | null;
   userId: string | null;
   teamId: string | null;
-  teamRole: 'owner' | 'admin' | 'member' | null;
+  teamRole: TeamRole | null;
 }
 
 export interface WelcomeMessageInput {

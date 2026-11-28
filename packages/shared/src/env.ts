@@ -1,3 +1,4 @@
+import { NATIVE_PROVIDER_IDS } from '@timeline/db/integration-providers';
 import { z } from 'zod';
 
 import {
@@ -372,12 +373,8 @@ const baseSchema = z.object({
 
   // Redis (optional in Phase 1; required from Phase 3)
   REDIS_URL: z.url().optional(),
-  INTEGRATION_REQUEST_GOVERNOR_PROVIDERS: z
-    .string()
-    .default('google_drive,linear,github,monday,slack,sentry'),
-  INTEGRATION_RECOVERY_PROVIDERS: z
-    .string()
-    .default('google_drive,linear,github,monday,slack,sentry'),
+  INTEGRATION_REQUEST_GOVERNOR_PROVIDERS: z.string().default(NATIVE_PROVIDER_IDS.join(',')),
+  INTEGRATION_RECOVERY_PROVIDERS: z.string().default(NATIVE_PROVIDER_IDS.join(',')),
 
   // Qdrant (Phase 5+)
   QDRANT_URL: z.url().optional(),
@@ -661,6 +658,8 @@ const baseSchema = z.object({
   LINEAR_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   LINEAR_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
   LINEAR_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  HUBSPOT_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  HUBSPOT_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
   GITHUB_APP_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   GITHUB_APP_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
   GITHUB_APP_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),

@@ -5,6 +5,7 @@ import {
   documents,
   documentVersions,
 } from '@timeline/db';
+import type { ExtractedRepresentationKind as RepresentationKind } from '@timeline/db/contracts/document-kinds';
 import {
   childLogger,
   chunkText,
@@ -239,8 +240,6 @@ interface DocumentExtractResult {
   reason?: string;
   driveFileId?: string;
 }
-
-type RepresentationKind = 'source_text' | 'transcript' | 'visual_description' | 'metadata_preview';
 
 interface ExtractedRepresentation {
   kind: RepresentationKind;

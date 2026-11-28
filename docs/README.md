@@ -17,7 +17,7 @@ Read the document for the task at hand. Current behavior, future work and histor
 - [Website sources](websites.md).
 - [Objects and boards](objects.md), [calendar](calendar.md), [captured files](captured-files.md), [agent coworkers](agent-coworkers.md).
 - [Design foundations](../design.md), [application patterns](design/app.md), [public-site patterns](design/public.md).
-- [Provider contribution template](native-provider-template.md), [public document registry](public-site-registry.md), [analytics contract](privacy-analytics-interface.md).
+- [Integration surfaces and how to add one](integration-surfaces.md), [provider contribution template](native-provider-template.md), [public document registry](public-site-registry.md), [analytics contract](privacy-analytics-interface.md).
 - [Architecture decisions](adr/README.md): rationale, not a second live specification.
 
 ## Rollout and evidence

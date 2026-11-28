@@ -1,3 +1,4 @@
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { withTeam } from '@timeline/shared/team-scope';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
@@ -17,7 +18,6 @@ export const metadata: Metadata = {
 
 const objectsBackLink = <HistoryBackLink fallbackHref="/app/objects" label="Back" />;
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMPTY_SEARCH_PARAMS: Record<string, string | string[] | undefined> = {};
 
 export default async function NewObjectPage({

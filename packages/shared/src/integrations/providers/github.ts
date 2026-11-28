@@ -1,9 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, createSign } from 'node:crypto';
 
+import { z } from 'zod';
+
 import { getEnv } from '#src/env.js';
 import { formatErrorCause } from '#src/http/error-cause.js';
 import { ExternalHttpError } from '#src/http/external-fetch.js';
+import { NATIVE_PROVIDER_LABELS } from '#src/integrations/provider-labels.js';
 import {
   providerFetch,
   providerResponseLimit,
@@ -776,6 +779,7 @@ interface GhMilestone {
 }
 
 interface GhIssue {
+  state_reason?: string | null;
   id: number;
   number: number;
   title: string;
@@ -909,7 +913,7 @@ interface RepoCursor {
    * Last observed issue lifecycle per GitHub issue id. Used so polling can mint
    * transition discriminators (e.g. closed→open) without a webhook action.
    */
-  issue_lifecycles?: Record<string, 'open' | 'closed'>;
+  issue_lifecycles?: Record<string, 'open' | 'closed' | 'cancelled'>;
   /**
    * Last observed pull-request lifecycle per GitHub PR id. Same role as
    * `issue_lifecycles` for open/closed/merged polling transitions.
@@ -1177,7 +1181,11 @@ function githubWorkItemContentText(
     .join('\n\n');
 }
 
-function githubIssueLifecycle(state: string): 'open' | 'closed' {
+function githubIssueLifecycle(
+  state: string,
+  reason?: string | null,
+): 'open' | 'closed' | 'cancelled' {
+  if (state === 'closed' && reason === 'not_planned') return 'cancelled';
   return state === 'closed' ? 'closed' : 'open';
 }
 
@@ -1213,10 +1221,10 @@ const GITHUB_PR_TRANSITION_ACTIONS = new Set([
 ]);
 
 function githubIssueDedupKey(
-  issue: Pick<GhIssue, 'id' | 'state' | 'updated_at'>,
+  issue: Pick<GhIssue, 'id' | 'state' | 'state_reason' | 'updated_at'>,
   action?: string | null,
 ): string {
-  const lifecycle = githubIssueLifecycle(issue.state);
+  const lifecycle = githubIssueLifecycle(issue.state, issue.state_reason);
   // `opened` stays lifecycle-only so webhook + first poll share one raw_event.
   // Later transitions (especially closed→reopened) append updated_at.
   if (action && action !== 'opened' && GITHUB_ISSUE_TRANSITION_ACTIONS.has(action)) {
@@ -1275,11 +1283,11 @@ function pruneLifecycleMap<T extends string>(
 
 /** Infer a webhook-equivalent transition action from polling lifecycle history. */
 function githubSyncIssueTransitionAction(
-  previous: 'open' | 'closed' | undefined,
-  current: 'open' | 'closed',
+  previous: 'open' | 'closed' | 'cancelled' | undefined,
+  current: 'open' | 'closed' | 'cancelled',
 ): string | null {
   if (!previous || previous === current) return null;
-  if (current === 'closed') return 'closed';
+  if (current !== 'open') return 'closed';
   return 'reopened';
 }
 
@@ -1320,6 +1328,8 @@ function prToEvent(repo: string, pr: GhPullRequest, action?: string | null): Int
     extra: {
       github: {
         type: 'pull_request',
+        id: String(pr.id),
+        title: pr.title,
         repo,
         number: pr.number,
         url: pr.html_url,
@@ -1370,6 +1380,9 @@ function issueToEvent(
     extra: {
       github: {
         type: 'issue',
+        id: String(issue.id),
+        title: issue.title,
+        state_reason: issue.state_reason ?? null,
         repo,
         number: issue.number,
         url: issue.html_url,
@@ -1382,7 +1395,12 @@ function issueToEvent(
       canonicalName: `${repo}#${String(issue.number)}: ${issue.title}`,
       displayTitle: `${repoDisplayName(repo)}: ${issue.title}`,
       externalId,
-      status: issue.state === 'closed' ? 'done' : 'open',
+      status:
+        issue.state === 'open'
+          ? 'open'
+          : issue.state_reason === 'not_planned'
+            ? 'cancelled'
+            : 'done',
       url: issue.html_url,
       aliases: [`ISSUE-${repo}-${String(issue.number)}`],
     },
@@ -1900,6 +1918,7 @@ function ghIssueFromWebhook(record: Record<string, unknown>): GhIssue | null {
     assignees: assigneesFromWebhook(record.assignees),
     labels: labelsFromWebhook(record.labels),
     milestone: milestoneFromWebhook(record.milestone),
+    state_reason: stringValue(record.state_reason),
     ...(record.pull_request ? { pull_request: { html_url: htmlUrl } } : {}),
   };
 }
@@ -2344,7 +2363,7 @@ async function syncIssuesSurface(
       const issueEvents = issues
         .map((i) => {
           if (i.pull_request) return null;
-          const lifecycle = githubIssueLifecycle(i.state);
+          const lifecycle = githubIssueLifecycle(i.state, i.state_reason);
           const previous = lifecycles[String(i.id)];
           const action = githubSyncIssueTransitionAction(previous, lifecycle);
           lifecycles[String(i.id)] = lifecycle;
@@ -3058,7 +3077,7 @@ async function expandGithubSelections(
 
 export const githubProvider: IntegrationProvider = {
   id: 'github',
-  displayLabel: 'GitHub',
+  displayLabel: NATIVE_PROVIDER_LABELS.github,
   syncSelectionPolicy: {
     recovery: 'per_resource',
     resolveTarget(selections, target) {
@@ -3342,4 +3361,56 @@ function summarizeIntegrationFailures(
       .join('; ')
       .slice(0, 400),
   };
+}
+
+/** A closing relationship comes from GitHub's graph, never from the PR description. */
+export async function githubClosingIssueKeys(
+  raw: Record<string, unknown>,
+  repo: string,
+  number: number,
+): Promise<string[]> {
+  const parts = repo.split('/');
+  if (parts.length !== 2 || !parts.every(Boolean)) throw new Error('Invalid GitHub repository');
+  const tokens = await ensureGithubInstallationAccessToken(raw as unknown as GithubTokens, repo);
+  const token = tokens.github_installation_access_token;
+  if (!token) throw new Error('GitHub installation token is unavailable');
+  const keys = new Set<string>();
+  const seenCursors = new Set<string>();
+  let after: string | null = null;
+  do {
+    const response = await fetch('https://api.github.com/graphql', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query:
+          'query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){closingIssuesReferences(first:100,after:$after){nodes{databaseId} pageInfo{hasNextPage endCursor}}}}}',
+        variables: { owner: parts[0], name: parts[1], number, after },
+      }),
+    });
+    if (!response.ok) throw new Error('GitHub closing issue lookup failed');
+    const result = z
+      .object({
+        errors: z.array(z.unknown()).max(0).optional(),
+        data: z.object({
+          repository: z.object({
+            pullRequest: z.object({
+              closingIssuesReferences: z.object({
+                nodes: z.array(z.object({ databaseId: z.number().int().positive() })),
+                pageInfo: z.object({ hasNextPage: z.boolean(), endCursor: z.string().nullable() }),
+              }),
+            }),
+          }),
+        }),
+      })
+      .safeParse(await response.json());
+    if (!result.success) throw new Error('GitHub closing issue references incomplete');
+    const refs = result.data.data.repository.pullRequest.closingIssuesReferences;
+    for (const node of refs.nodes) keys.add('issue:' + String(node.databaseId));
+    if (!refs.pageInfo.hasNextPage) break;
+    after = refs.pageInfo.endCursor;
+    if (!after || seenCursors.has(after))
+      throw new Error('GitHub closing issue references incomplete');
+    seenCursors.add(after);
+  } while (after);
+  return [...keys];
 }

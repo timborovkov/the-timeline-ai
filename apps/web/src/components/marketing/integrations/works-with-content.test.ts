@@ -17,7 +17,6 @@ describe('works-with content', () => {
     expect(WORKS_WITH_PAGE_TOOLS.map((tool) => tool.slug)).toEqual([
       'jira',
       'notion',
-      'hubspot',
       'attio',
       'pipedrive',
     ]);
@@ -40,17 +39,17 @@ describe('works-with content', () => {
     expect(notion.today).toMatch(/Notion MCP/i);
     expect(notion.later).toContain('Native Notion capture is unavailable');
     expect(JSON.stringify(notion)).not.toMatch(/planned|coming soon/iu);
-    expect(hubspot.status).toBe('coming-soon');
+    expect(hubspot.status).toBe('native-sync');
     expect(attio.status).toBe('coming-soon');
     expect(pipedrive.status).toBe('coming-soon');
-    expect(hubspot.today).toMatch(/does not sync HubSpot/i);
+    expect(hubspot.today).toMatch(/HubSpot pipeline changes/i);
     expect(attio.later).toMatch(/no built-in Attio lookup/i);
     expect(pipedrive.later).toMatch(/no built-in Pipedrive lookup/i);
 
     const copy = JSON.stringify(WORKS_WITH_TOOLS);
     expect(copy).not.toMatch(/\bvs\.?\b|switch from/iu);
 
-    expect(hubspot.statusLabel).toBe('Native capture planned');
+    expect(hubspot.statusLabel).toBe('Native sync');
     expect(jira.statusLabel).toBe('Native capture planned');
     expect(linear.statusLabel).toBe('Native sync');
 

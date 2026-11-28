@@ -1,3 +1,4 @@
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import * as ingestWebhooks from '@timeline/shared/ingest-webhooks';
 import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
@@ -169,9 +170,9 @@ function redactedHeaders(headers: Headers): Record<string, string> {
 }
 
 function ingestVisibilityFor(
-  visibilityDefault: 'private' | 'team' | 'specific_users',
+  visibilityDefault: EventVisibility,
   ownerUserId: string | null,
-): { value: 'private' | 'team' | 'specific_users'; ownerUserId: string | null } {
+): { value: EventVisibility; ownerUserId: string | null } {
   if (visibilityDefault === 'private' && !ownerUserId) {
     return { value: 'team', ownerUserId: null };
   }

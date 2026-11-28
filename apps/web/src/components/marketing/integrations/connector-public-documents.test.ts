@@ -20,7 +20,7 @@ describe('connector public documents', () => {
     ]);
     expect(
       CONNECTOR_PUBLIC_DOCUMENTS.documents.filter((document) => document.kind === 'connector'),
-    ).toHaveLength(6);
+    ).toHaveLength(7);
     for (const document of CONNECTOR_PUBLIC_DOCUMENTS.documents) {
       expect(PUBLIC_DOCUMENT_REGISTRY.get(document.canonicalPath)).toBe(document);
     }

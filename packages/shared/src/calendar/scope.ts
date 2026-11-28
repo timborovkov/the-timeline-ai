@@ -7,13 +7,19 @@ import {
   rawEvents,
   teamCalendarSettings,
 } from '@timeline/db';
+import type {
+  EventVisibility as Visibility,
+  TeamRole,
+} from '@timeline/db/contracts/workspace-access';
+import { DEFAULT_WORKSPACE_TIMEZONE } from '@timeline/db/contracts/workspace-time';
 import { type SQL, and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
+import type { CalendarShowAs } from '#src/calendar/contract.js';
 import { createGoogleCalendarScope } from '#src/calendar/google.js';
 import {
   calendarEventMutationLockKey,
   calendarEventMutationTargetId,
-  type CalendarRecurrenceEditMode,
+  type CalendarRecurrenceEditMode as RecurrenceEditMode,
 } from '#src/calendar/locking.js';
 import {
   buildCalendarSourcePayloadMetadata,
@@ -48,10 +54,7 @@ import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';
 import { assertValidTimezone } from '#src/time/index.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
 
-type Visibility = 'private' | 'team' | 'specific_users';
-type CalendarShowAs = 'busy' | 'free' | 'tentative';
 type CalendarEventSource = 'internal' | 'google' | 'caldav';
-type RecurrenceEditMode = CalendarRecurrenceEditMode;
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 type CalendarQdrantAction = 'embed' | 'delete' | null;
@@ -124,7 +127,7 @@ export interface CalendarScopeDeps {
   db: Db;
   teamId: string;
   userId: string;
-  ensureMember: (role?: 'member' | 'admin' | 'owner') => Promise<unknown>;
+  ensureMember: (role?: TeamRole) => Promise<unknown>;
   requireTeamMember: (otherUserId: string) => Promise<void>;
   postCommitEffects?: (() => void | Promise<void>)[];
 }
@@ -2005,7 +2008,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         teamId,
         defaultReminderMinutes: 15,
         defaultVisibility: 'team' as const,
-        defaultTimezone: 'Europe/Helsinki',
+        defaultTimezone: DEFAULT_WORKSPACE_TIMEZONE,
         updatedAt: new Date(),
       };
     },

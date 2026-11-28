@@ -1,15 +1,6 @@
-export const GLOBAL_SEARCH_SOURCE_VALUES = [
-  'web',
-  'telegram',
-  'slack',
-  'email',
-  'document',
-  'meeting',
-  'integration',
-  'ingest_webhook',
-  'calendar',
-  'system',
-] as const;
+import { EVENT_SOURCES } from '@timeline/db/contracts/event-sources';
+
+export const GLOBAL_SEARCH_SOURCE_VALUES = EVENT_SOURCES;
 
 export type GlobalSearchSource = (typeof GLOBAL_SEARCH_SOURCE_VALUES)[number];
 

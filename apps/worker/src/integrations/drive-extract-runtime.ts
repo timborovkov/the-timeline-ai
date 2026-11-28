@@ -11,10 +11,9 @@ import {
   queue,
   withTeam,
 } from '@timeline/shared';
+import { NIL_UUID } from '@timeline/shared/identifiers';
 import { cleanupDriveExtract } from '@timeline/shared/integrations/drive-extract-lifecycle';
 import * as extractProtocol from '@timeline/shared/integrations/drive-extract-protocol';
-
-const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 interface DriveTransientExtractIO {
   getDocumentsBucket: () => string;
@@ -360,7 +359,7 @@ export async function sweepOrphanDriveTransientExtracts(input: {
   let cleared = 0;
   for (const teamId of teamIds) {
     if (remaining <= 0) break;
-    const scope = withTeam(input.db, teamId, ZERO_UUID, { skipMembershipCheck: true });
+    const scope = withTeam(input.db, teamId, NIL_UUID, { skipMembershipCheck: true });
     const orphans = await scope.integrations.listDriveExtractCursors({
       orphanOnly: true,
       now,

@@ -1,5 +1,9 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
+import type { TeamRole as McpOAuthTeamRole } from '@timeline/db/contracts/workspace-access';
+
+import { NIL_UUID } from '#src/identifiers.js';
+
 /** MCP authorization-server scopes only. Do not add CRM or other provider-app scopes. */
 export const MCP_OAUTH_SCOPES = [
   'read',
@@ -9,7 +13,7 @@ export const MCP_OAUTH_SCOPES = [
   'websites:manage',
 ] as const;
 export const MCP_OAUTH_DEFAULT_SCOPE = 'read';
-export const MCP_TEAM_ACTOR_USER_ID = '00000000-0000-0000-0000-000000000000';
+export const MCP_TEAM_ACTOR_USER_ID = NIL_UUID;
 
 export const AUTHORIZATION_CODE_TTL_MS = 10 * 60 * 1_000;
 export const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1_000;
@@ -104,8 +108,6 @@ export interface OAuthTokenResponse {
   scope: string;
   resource: string;
 }
-
-type McpOAuthTeamRole = 'owner' | 'admin' | 'member';
 
 export interface ActiveMcpOAuthMembership {
   role: McpOAuthTeamRole;

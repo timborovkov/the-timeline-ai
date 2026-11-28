@@ -2,6 +2,8 @@ import type {
   integrations as integrationsTable,
   providerConnections as providerConnectionsTable,
 } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
+import type { NativeProviderId } from '@timeline/db/integration-providers';
 
 import type { TimelineEventClass } from '#src/event-class.js';
 import type { DriveCaptureServices } from '#src/integrations/google-drive-context.js';
@@ -12,10 +14,7 @@ import type {
 
 // Phase 11 — Provider adapter interface.
 //
-// Every integration (Google Drive, Linear, GitHub, Monday.com, Slack, Sentry,
-// custom MCP-backed)
-// implements this. The shared worker + API routes drive providers through
-// this surface so business logic stays out of route handlers and webhooks.
+// Native adapters implement this interface for the shared worker and API routes.
 
 export type IntegrationRow = typeof integrationsTable.$inferSelect;
 export type ProviderConnectionRow = typeof providerConnectionsTable.$inferSelect;
@@ -83,7 +82,7 @@ export interface IntegrationEvent {
   occurredAt: Date;
   actor?: { externalId?: string; name?: string; email?: string } | null;
   contentText: string;
-  visibility?: 'team' | 'private' | 'specific_users';
+  visibility?: EventVisibility;
   visibilityUserIds?: string[] | null;
   /**
    * Extra provider-specific fields merged into source_metadata. Providers should
@@ -244,20 +243,11 @@ export interface SyncSelectionPolicy {
   resolveTarget(selections: SyncSelection[], target: SyncTarget): SyncSelection[];
 }
 
-export type NativeProviderId = IntegrationProvider['id'];
-
-export const NATIVE_PROVIDER_IDS = [
-  'google_drive',
-  'linear',
-  'github',
-  'monday',
-  'slack',
-  'sentry',
-] as const satisfies readonly NativeProviderId[];
-
-export function isNativeProviderId(provider: string): provider is NativeProviderId {
-  return (NATIVE_PROVIDER_IDS as readonly string[]).includes(provider);
-}
+export {
+  NATIVE_PROVIDER_IDS,
+  isNativeProviderId,
+  type NativeProviderId,
+} from '@timeline/db/integration-providers';
 
 const HOUR_MS = 60 * 60_000;
 
@@ -310,6 +300,14 @@ export const PROVIDER_SYNC_POLICIES: Record<NativeProviderId, ProviderSyncPolicy
     supportsWebhookIngress: true,
     supportsTargetedSync: false,
     provisioningModel: 'manual',
+  },
+  hubspot: {
+    reconciliationIntervalMs: 6 * HOUR_MS,
+    ingestionPosture: 'webhook_wakeup',
+    budgetScopes: ['requests'],
+    supportsWebhookIngress: true,
+    supportsTargetedSync: false,
+    provisioningModel: 'app_level',
   },
   sentry: {
     reconciliationIntervalMs: 24 * HOUR_MS,
@@ -663,7 +661,7 @@ export interface OAuthCallbackOutput {
 }
 
 export interface IntegrationProvider extends ProviderResourceAccess {
-  id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
+  id: NativeProviderId;
   displayLabel: string;
   syncSelectionPolicy: SyncSelectionPolicy;
   /**

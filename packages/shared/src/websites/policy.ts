@@ -1,4 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+  WEBSITE_SCAN_FREQUENCIES,
+  type WebsiteScanFrequency,
+} from '@timeline/db/contracts/website-schedule';
 
 import { getEnv } from '#src/env.js';
 import { validateMcpUrl } from '#src/mcp/auth.js';
@@ -21,7 +25,7 @@ export function websiteLimits() {
   };
 }
 export interface WebsiteSchedule {
-  frequency: 'manual' | 'daily' | 'weekly';
+  frequency: WebsiteScanFrequency;
   time: string;
   weekday: number;
   timezone: string;
@@ -44,7 +48,7 @@ export function normalizeWebsiteUrl(input: string): string {
 
 export function validateWebsiteSchedule(schedule: WebsiteSchedule): void {
   if (
-    !['manual', 'daily', 'weekly'].includes(schedule.frequency) ||
+    !WEBSITE_SCAN_FREQUENCIES.includes(schedule.frequency) ||
     !/^([01]\d|2[0-3]):[0-5]\d$/.test(schedule.time) ||
     !Number.isInteger(schedule.weekday) ||
     schedule.weekday < 1 ||

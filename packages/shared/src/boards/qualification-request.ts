@@ -1,6 +1,7 @@
 import { boardQualificationRequests, boards, entities, teamMembers, type Db } from '@timeline/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
+import { NIL_UUID } from '#src/identifiers.js';
 import { tagOperatorJob } from '#src/platform-admin/runtime.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -20,7 +21,7 @@ export async function requestBoardQualification(
   },
 ) {
   // Service principals cannot inherit a member's authority for background inference.
-  if (input.userId === '00000000-0000-0000-0000-000000000000') return;
+  if (input.userId === NIL_UUID) return;
   const [member] = await db
     .select({ id: teamMembers.userId })
     .from(teamMembers)

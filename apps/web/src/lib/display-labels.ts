@@ -1,27 +1,24 @@
+import { NATIVE_PROVIDER_LABELS } from '@timeline/shared/integrations/provider-labels';
+
 type DisplayRecord = Record<string, unknown>;
 
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 const PROVIDER_LABELS: Record<string, string> = {
+  ...NATIVE_PROVIDER_LABELS,
   calendar: 'Calendar',
   document: 'Documents',
   email: 'Email',
-  github: 'GitHub',
   google_calendar: 'Google Calendar',
-  google_drive: 'Google Drive',
   google_meet: 'Google Meet',
   meet: 'Google Meet',
   ingest_webhook: 'Webhook',
   integration: 'Integrations',
-  linear: 'Linear',
   mcp: 'MCP',
   meeting: 'Meetings',
-  monday: 'Monday.com',
   microsoft_teams: 'Microsoft Teams',
   teams: 'Microsoft Teams',
   recall: 'Recall.ai',
-  sentry: 'Sentry',
-  slack: 'Slack',
   telegram: 'Telegram',
   system: 'System',
   web: 'Web capture',

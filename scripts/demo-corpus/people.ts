@@ -1,3 +1,5 @@
+import type { TeamRole } from '@timeline/db/contracts/workspace-access';
+
 import { DEMO_IDS, DEMO_LOGIN_PASSWORD } from '../demo-fixture.js';
 
 import { CORPUS_UUID } from './ids.js';
@@ -9,7 +11,7 @@ export interface CorpusPerson {
   id: string;
   name: string;
   email: string;
-  role: 'owner' | 'admin' | 'member';
+  role: TeamRole;
   title: string;
   timezone: string;
 }

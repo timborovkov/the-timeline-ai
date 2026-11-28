@@ -1,5 +1,6 @@
 'use client';
 
+import type { McpAuthType as AuthType } from '@timeline/db/contracts/mcp-auth';
 import { Server } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useId, useReducer, useRef, useState, type SyntheticEvent } from 'react';
@@ -27,8 +28,6 @@ interface McpServerRow {
   toolsCachedAt: string | null;
   lastError: string | null;
 }
-
-type AuthType = 'none' | 'bearer' | 'header' | 'basic' | 'url_key' | 'oauth';
 
 interface AddServerState {
   name: string;

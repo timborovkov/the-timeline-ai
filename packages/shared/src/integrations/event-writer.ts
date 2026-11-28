@@ -14,6 +14,8 @@ import {
   slackConversationBindings,
   slackWorkspaces,
 } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
+import { isBoardImportProvider } from '@timeline/db/integration-providers';
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
 import {
@@ -33,6 +35,7 @@ import {
   textHasLinks,
 } from '#src/conversational/link-artifacts.js';
 import { classifyCapturedEvent, type TimelineEventClass } from '#src/event-class.js';
+import { NIL_UUID, UUID_RE } from '#src/identifiers.js';
 import {
   enqueueGithubTaskProposalJob,
   capturedWorkItemFromIntegrationEvent,
@@ -100,12 +103,12 @@ const INTEGRATION_DIRECT_WRITE_PLANNER_VERSION = 'integration-object-map-2026-06
 const INTEGRATION_OBSERVED_ASSOCIATION_RUN_VERSION = 'integration-observed-association-2026-06';
 const INTEGRATION_OBSERVED_ASSOCIATION_PLANNER_VERSION = 'integration-association-2026-06';
 const INTEGRATION_SOURCE_SNAPSHOT_VERSION = 'integration-source-snapshot-2026-06';
-const TOMBSTONE_SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
+const TOMBSTONE_SYSTEM_ACTOR_ID = NIL_UUID;
 
 interface IntegrationProjectionEvidence {
   id: string;
   sourcePayloadRef: string | null;
-  visibility: 'team' | 'private' | 'specific_users';
+  visibility: EventVisibility;
   visibilityOwnerUserId: string | null;
   visibilityUserIds: string[] | null;
 }
@@ -158,11 +161,11 @@ interface IntegrationProjectionOutputConfig {
 }
 
 function resolveEventVisibility(args: {
-  requestedVisibility: 'team' | 'private' | 'specific_users';
-  integrationDefault: 'team' | 'private' | 'specific_users';
+  requestedVisibility: EventVisibility;
+  integrationDefault: EventVisibility;
   hasSpecificUsers: boolean;
   hasVisibilityOwner: boolean;
-}): 'team' | 'private' | 'specific_users' {
+}): EventVisibility {
   if (args.requestedVisibility === 'specific_users') {
     if (args.hasSpecificUsers) return 'specific_users';
     if (args.integrationDefault === 'private' && args.hasVisibilityOwner) return 'private';
@@ -478,6 +481,28 @@ export async function writeIntegrationEvents(deps: {
     rawEventIdsByDedupKey,
   });
 
+  const managedEvents = new Set<string>();
+  const { provider, externalAccountId, connectedByUserId } = deps.integration;
+  if (
+    isBoardImportProvider(provider) &&
+    externalAccountId &&
+    connectedByUserId &&
+    activeWritableEvents.length
+  ) {
+    const owners = await withTeam(
+      deps.db,
+      teamId,
+      connectedByUserId,
+    ).boardImports.authorizedWorkers(provider, externalAccountId);
+    for (const owner of owners) {
+      const handled = await withTeam(deps.db, teamId, owner).boardImports.applyEvents(
+        deps.integration.id,
+        [...rawEventIdsByDedupKey.values()],
+      );
+      for (const id of handled) managedEvents.add(id);
+    }
+  }
+
   const artifactEvents = activeWritableEvents.filter(
     (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } =>
       Boolean(evt.objectMap) && integrationEventClass(evt) !== 'pulse',
@@ -521,6 +546,7 @@ export async function writeIntegrationEvents(deps: {
     const capturedWorkItems = [
       ...new Set(
         repairableArtifactEvents
+          .filter((event) => !managedEvents.has(rawEventIdsByDedupKey.get(event.dedupKey) ?? ''))
           .map((event) => capturedWorkItemFromIntegrationEvent(event)?.externalId)
           .filter((externalId): externalId is string => typeof externalId === 'string'),
       ),
@@ -1025,8 +1051,6 @@ export async function flushDeferredAcceptedSourceEnrichment(db: Db, limit = 50):
   return flushed;
 }
 
-const PARENT_EVENT_ID_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
-
 function metadataRecord(metadata: unknown): Record<string, unknown> {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return {};
   return metadata as Record<string, unknown>;
@@ -1066,7 +1090,7 @@ async function deferredEmailParentBlocksAudio(
   metadata: unknown,
 ): Promise<boolean> {
   const parentId = metadataRecord(metadata).parent_event_id;
-  if (typeof parentId !== 'string' || !PARENT_EVENT_ID_UUID.test(parentId)) return false;
+  if (typeof parentId !== 'string' || !UUID_RE.test(parentId)) return false;
   const [parent] = await db
     .select({ teamId: rawEvents.teamId, sourceMetadata: rawEvents.sourceMetadata })
     .from(rawEvents)
@@ -1364,13 +1388,11 @@ function slackBindingKeyParts(slackTeamId: string, channelId: string): string {
   return `${slackTeamId}:${channelId}`;
 }
 
-const ENTITY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 function driveLinkedObjectId(event: IntegrationEvent): string | null {
   const drive = event.extra?.drive;
   if (!drive || typeof drive !== 'object' || Array.isArray(drive)) return null;
   const id = (drive as Record<string, unknown>).linked_object_id;
-  return typeof id === 'string' && ENTITY_ID_RE.test(id) ? id : null;
+  return typeof id === 'string' && UUID_RE.test(id) ? id : null;
 }
 
 async function loadExistingWorkspaceObjectLinks(

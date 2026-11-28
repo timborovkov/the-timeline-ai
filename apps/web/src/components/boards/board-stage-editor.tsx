@@ -1,10 +1,9 @@
 'use client';
 
+import type { BoardLaneKind as BoardStageKind } from '@timeline/db/contracts/board-kinds';
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-
-type BoardStageKind = 'active' | 'done' | 'terminal' | 'lost' | 'blocked';
 
 export interface EditableBoardStage {
   id?: string;

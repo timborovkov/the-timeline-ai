@@ -6,6 +6,7 @@ import {
   rawEvents,
 } from '@timeline/db';
 import { cacheKey, cachedJson } from '@timeline/shared/cache';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, count, eq, isNotNull, lt, notExists, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -18,7 +19,6 @@ import { requireRedisQueue } from '@/lib/queue';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const retrySchema = z.object({
   kind: z.enum(['transcription', 'extraction', 'embedding', 'document_processing']),
   id: z.string().regex(UUID_RE),

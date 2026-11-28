@@ -1,3 +1,4 @@
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { withTeam } from '@timeline/shared/team-scope';
 import { z } from 'zod';
 
@@ -5,7 +6,6 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const uuidSchema = z.string().regex(UUID_RE, 'Invalid id');
 
 type ResolvedScope =

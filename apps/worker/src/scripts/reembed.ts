@@ -38,10 +38,10 @@ import {
   rawEvents,
 } from '@timeline/db';
 import { queue } from '@timeline/shared';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { and, asc, eq, gt, isNotNull, isNull, or, type SQL, sql } from 'drizzle-orm';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import {
   PAGE_SIZE,
   enqueueByUpdatedAt,

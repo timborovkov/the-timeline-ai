@@ -4,11 +4,10 @@ import { pathToFileURL } from 'node:url';
 import { closeDb, getDb } from '@timeline/db';
 import { queue } from '@timeline/shared';
 import { getEnv } from '@timeline/shared/env';
+import { NIL_UUID, UUID_RE } from '@timeline/shared/identifiers';
 import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { withTeam } from '@timeline/shared/team-scope';
 
-const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ESTIMATED_INPUT_TOKENS_PER_TASK = 220;
 const ESTIMATED_OUTPUT_TOKENS_PER_TASK = 20;
 // Peak weekday OpenRouter rates for TIMELINE_MODELS.taskCategorization
@@ -147,7 +146,7 @@ async function main(): Promise<void> {
     );
   }
   const db = getDb();
-  const scope = withTeam(db, teamId, ZERO_UUID, { skipMembershipCheck: true });
+  const scope = withTeam(db, teamId, NIL_UUID, { skipMembershipCheck: true });
   const [rows, projectAudit] = await Promise.all([
     scope.objects.listObjects({
       type: 'task',

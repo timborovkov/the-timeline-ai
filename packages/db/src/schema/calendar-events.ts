@@ -13,6 +13,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { DEFAULT_WORKSPACE_TIMEZONE } from '#src/contracts/workspace-time.js';
 import { entities } from '#src/schema/entities.js';
 import { eventVisibility } from '#src/schema/raw-events.js';
 import { teams } from '#src/schema/teams.js';
@@ -125,6 +126,6 @@ export const teamCalendarSettings = pgTable('team_calendar_settings', {
     .references(() => teams.id, { onDelete: 'cascade' }),
   defaultReminderMinutes: integer('default_reminder_minutes').notNull().default(15),
   defaultVisibility: eventVisibility('default_visibility').notNull().default('team'),
-  defaultTimezone: text('default_timezone').notNull().default('Europe/Helsinki'),
+  defaultTimezone: text('default_timezone').notNull().default(DEFAULT_WORKSPACE_TIMEZONE),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

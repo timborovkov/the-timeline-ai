@@ -589,8 +589,8 @@ describe('linearProvider.incrementalSync', () => {
     expect(ctx.saveCursor).toHaveBeenCalledWith('linear.issues', {
       updated_after: '2026-06-20T11:00:00.000Z',
       issue_statuses: {
-        'issue-1': 'in_progress',
-        'issue-2': 'in_progress',
+        'issue-1': 'team-1:in_progress',
+        'issue-2': 'team-1:in_progress',
       },
     });
     expect(ctx.saveCursor).toHaveBeenCalledWith('linear.comments', {

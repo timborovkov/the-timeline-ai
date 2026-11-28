@@ -14,6 +14,11 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import {
+  DOCUMENT_PROCESSING_STATUSES,
+  EXTRACTED_REPRESENTATION_KINDS,
+} from '#src/contracts/document-kinds.js';
+import { NIL_UUID } from '#src/contracts/identifiers.js';
 import { eventVisibility, rawEvents } from '#src/schema/raw-events.js';
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
@@ -27,23 +32,17 @@ import { users } from '#src/schema/users.js';
 // Visibility re-uses `event_visibility` so the same SQL predicate used for
 // raw_events also gates folders/documents — one rule, no enum drift.
 
-export const documentProcessingStatus = pgEnum('document_processing_status', [
-  'pending',
-  'extracting',
-  'chunked',
-  'embedded',
-  'deferred',
-  'failed',
-]);
+export const documentProcessingStatus = pgEnum(
+  'document_processing_status',
+  DOCUMENT_PROCESSING_STATUSES,
+);
 
 export const fileKind = pgEnum('file_kind', ['captured', 'document']);
 
-export const extractedRepresentationKind = pgEnum('extracted_representation_kind', [
-  'source_text',
-  'transcript',
-  'visual_description',
-  'metadata_preview',
-]);
+export const extractedRepresentationKind = pgEnum(
+  'extracted_representation_kind',
+  EXTRACTED_REPRESENTATION_KINDS,
+);
 
 export const folders = pgTable(
   'folders',
@@ -75,7 +74,7 @@ export const folders = pgTable(
     uniqueIndex('folders_team_parent_name_unq')
       .on(
         table.teamId,
-        sql`COALESCE(${table.parentFolderId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+        sql`COALESCE(${table.parentFolderId}, ${NIL_UUID}::uuid)`.inlineParams(),
         sql`lower(${table.name})`,
       )
       .where(sql`${table.deletedAt} IS NULL`),
@@ -146,7 +145,7 @@ export const documents = pgTable(
     uniqueIndex('documents_team_folder_name_unq')
       .on(
         table.teamId,
-        sql`COALESCE(${table.folderId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+        sql`COALESCE(${table.folderId}, ${NIL_UUID}::uuid)`.inlineParams(),
         sql`lower(${table.name})`,
       )
       .where(sql`${table.deletedAt} IS NULL AND ${table.fileKind} = 'document'`),

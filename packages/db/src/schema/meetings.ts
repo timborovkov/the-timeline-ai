@@ -12,6 +12,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { MEETING_PLATFORMS } from '#src/contracts/meeting-platforms.js';
 import { eventVisibility, rawEvents } from '#src/schema/raw-events.js';
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
@@ -46,7 +47,7 @@ export const meetingStatus = pgEnum('meeting_status', [
   'failed',
 ]);
 
-export const meetingPlatform = pgEnum('meeting_platform', ['meet', 'teams', 'zoom']);
+export const meetingPlatform = pgEnum('meeting_platform', MEETING_PLATFORMS);
 
 export const meetingCaptureConfirmationStatus = pgEnum('meeting_capture_confirmation_status', [
   'pending',

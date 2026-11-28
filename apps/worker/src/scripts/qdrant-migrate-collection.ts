@@ -30,13 +30,12 @@ import { pathToFileURL } from 'node:url';
 
 import { qdrant } from '@timeline/shared';
 import { getEnv } from '@timeline/shared/env';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { TIMELINE_MODELS } from '@timeline/shared/llm';
 
 type QdrantClient = qdrant.QdrantClient;
 type QdrantClientOptions = qdrant.QdrantClientOptions;
 type RecallAtKResult = qdrant.RecallAtKResult;
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface QdrantMigrateArgs {
   sourceCollection: string;

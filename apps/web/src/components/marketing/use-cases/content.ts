@@ -210,7 +210,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       },
     ],
     boundary:
-      'Small teams can use Timeline’s people, company and deal records directly. If you already use a CRM, keep it as your operational system and check the integration directory for supported access.',
+      'Small teams can use Timeline’s people, company and deal records directly. If you already use a CRM, keep it as your operational system and check the integration directory for supported access. A selected HubSpot pipeline can sync to a Timeline board.',
     example: {
       label: 'Example',
       lines: [
@@ -224,7 +224,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       {
         question: 'Can changes here update my CRM?',
         answer:
-          'Timeline customer records are separate. External tools may have their own actions and permissions, as listed in Integrations.',
+          'Deal updates flow from HubSpot into Timeline. Edit the source deal in HubSpot. External tools may have their own actions and permissions, as listed in Integrations.',
       },
       {
         question: 'Can an internal Slack comment become customer fact?',

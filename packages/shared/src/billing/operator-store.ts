@@ -42,6 +42,7 @@ import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { createPolarBillingProvider, polarProductIdForPlan } from '#src/billing/polar.js';
 import type { BillingProvider, ExpireCheckoutResult } from '#src/billing/provider.js';
 import { getEnv } from '#src/env.js';
+import { UUID_RE } from '#src/identifiers.js';
 import {
   directoryOrder,
   directoryDates,
@@ -88,8 +89,6 @@ export interface BillingOperatorActor {
   userId: string;
   email: string;
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 export async function requirePlatformAdmin(db: Db, actor: BillingOperatorActor): Promise<void> {
   const [user] = await db

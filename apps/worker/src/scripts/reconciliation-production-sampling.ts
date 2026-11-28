@@ -19,6 +19,7 @@ import { loadEnvFile } from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 import { closeDb, getDb, type Db } from '@timeline/db';
+import { NIL_UUID, UUID_RE } from '@timeline/shared/identifiers';
 import {
   parseProductionSamplingEvidencePackSamples,
   writeProductionSamplingEvalReport,
@@ -26,9 +27,6 @@ import {
   type ProductionSamplingRunKind,
 } from '@timeline/shared/reconciliation/production-sampling';
 import { withTeam } from '@timeline/shared/team-scope';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 export interface Args {
   inputPaths: string[];
@@ -187,7 +185,7 @@ export async function runReconciliationProductionSamplingCli(
   }
   const reconciliationScope =
     args.teamId && deps.db
-      ? withTeam(deps.db, args.teamId, ZERO_UUID, { skipMembershipCheck: true }).reconciliation
+      ? withTeam(deps.db, args.teamId, NIL_UUID, { skipMembershipCheck: true }).reconciliation
       : null;
   const written = await writeReport({
     inputPaths: args.inputPaths,

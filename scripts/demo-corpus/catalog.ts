@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import type { MeetingPlatform } from '@timeline/db/contracts/meeting-platforms';
 import { classifyCapturedEvent } from '@timeline/shared/event-class';
 
 import {
@@ -129,7 +130,7 @@ export interface CorpusMeeting {
   chunkIds: string[];
   rawEventId: string;
   title: string;
-  platform: 'meet' | 'zoom' | 'teams';
+  platform: MeetingPlatform;
   meetingUrl: string;
   startedAt: string;
   endedAt: string;

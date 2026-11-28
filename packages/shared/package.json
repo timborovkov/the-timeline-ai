@@ -53,6 +53,12 @@
       "import": "./dist/integrations/health.js",
       "default": "./dist/integrations/health.js"
     },
+    "./integrations/provider-labels": {
+      "types": "./src/integrations/provider-labels.ts",
+      "development": "./src/integrations/provider-labels.ts",
+      "import": "./dist/integrations/provider-labels.js",
+      "default": "./dist/integrations/provider-labels.js"
+    },
     "./integrations/registry": {
       "types": "./src/integrations/registry.ts",
       "development": "./src/integrations/registry.ts",
@@ -717,6 +723,30 @@
       "development": "./src/evals/benchmark.ts",
       "import": "./dist/evals/benchmark.js",
       "default": "./dist/evals/benchmark.js"
+    },
+    "./calendar/contract": {
+      "types": "./src/calendar/contract.ts",
+      "development": "./src/calendar/contract.ts",
+      "import": "./dist/calendar/contract.js",
+      "default": "./dist/calendar/contract.js"
+    },
+    "./identifiers": {
+      "types": "./src/identifiers.ts",
+      "development": "./src/identifiers.ts",
+      "import": "./dist/identifiers.js",
+      "default": "./dist/identifiers.js"
+    },
+    "./timeline-moments/identifiers": {
+      "types": "./src/timeline-moments/identifiers.ts",
+      "development": "./src/timeline-moments/identifiers.ts",
+      "import": "./dist/timeline-moments/identifiers.js",
+      "default": "./dist/timeline-moments/identifiers.js"
+    },
+    "./conversation-surfaces/titles": {
+      "types": "./src/conversation-surfaces/titles.ts",
+      "development": "./src/conversation-surfaces/titles.ts",
+      "import": "./dist/conversation-surfaces/titles.js",
+      "default": "./dist/conversation-surfaces/titles.js"
     }
   },
   "main": "./dist/index.js",

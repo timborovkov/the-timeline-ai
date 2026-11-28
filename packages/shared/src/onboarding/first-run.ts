@@ -1,3 +1,5 @@
+import type { DocumentProcessingStatus } from '@timeline/db/contracts/document-kinds';
+
 export const TEAM_WORK_STYLES = ['email', 'chat', 'dealflow', 'delivery', 'other'] as const;
 export type TeamWorkStyle = (typeof TEAM_WORK_STYLES)[number];
 
@@ -321,9 +323,6 @@ export const TRY_ASKING_PROMPTS = [
   'Who is mentioned, and in what role?',
   'What should happen next?',
 ] as const;
-
-type DocumentProcessingStatus =
-  'pending' | 'extracting' | 'chunked' | 'embedded' | 'deferred' | 'failed';
 
 export function documentProcessingSteps(
   status: DocumentProcessingStatus | null,

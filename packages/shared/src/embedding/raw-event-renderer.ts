@@ -1,3 +1,4 @@
+import { nativeProviderLabel } from '#src/integrations/provider-labels.js';
 import {
   payloadDigestFromMetadata,
   sourcePayloadRefFromMetadata,
@@ -306,15 +307,6 @@ function renderEmailContext(meta: Metadata): string | null {
   return parts.length > 1 ? parts.join(' | ') : null;
 }
 
-const PROVIDER_LABELS: Record<string, string> = {
-  github: 'GitHub',
-  google_drive: 'Google Drive',
-  linear: 'Linear',
-  monday: 'Monday.com',
-  sentry: 'Sentry',
-  slack: 'Slack',
-};
-
 const PROVIDER_CONTEXT_FIELDS: [string, string][] = [
   ['monday_workspace_name', 'Monday workspace'],
   ['monday_workspace_id', 'Monday workspace'],
@@ -337,7 +329,7 @@ const PROVIDER_CONTEXT_FIELDS: [string, string][] = [
 
 function renderIntegrationContext(meta: Metadata): string | null {
   const provider = metadataString(meta, 'provider');
-  const parts = [provider ? (PROVIDER_LABELS[provider] ?? provider) : 'Integration'];
+  const parts = [provider ? nativeProviderLabel(provider) : 'Integration'];
 
   const eventType = metadataString(meta, 'event_type');
   if (eventType) parts.push(`event ${eventType}`);

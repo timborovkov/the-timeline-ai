@@ -16,6 +16,7 @@ import { z } from 'zod';
 import type { CalendarScope } from '#src/calendar/scope.js';
 import { calendarEventDetailsVisibleToUser } from '#src/calendar/visibility.js';
 import { documentVisibleToUser } from '#src/documents/visibility.js';
+import { NIL_UUID, UUID_RE } from '#src/identifiers.js';
 import { childLogger } from '#src/logger.js';
 import { meetingVisibleToUser, savedMeetingVisibleToUser } from '#src/meetings/visibility.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
@@ -75,7 +76,6 @@ interface PinCursor {
 type PinRow = typeof userPins.$inferSelect;
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SORT_GAP = 1024n;
 const SORT_SAFETY_MIN = -9_000_000_000_000_000_000n;
 const PIN_LIST_BATCH = 100;
@@ -543,7 +543,7 @@ export function createPinScope(deps: PinScopeDeps) {
   async function resolveTarget(ref: PinTargetRef): Promise<PinnedItem | null> {
     const canonical = await canonicalize(ref);
     const synthetic: PinRow = {
-      id: '00000000-0000-0000-0000-000000000000',
+      id: NIL_UUID,
       teamId: scope.teamId,
       userId: scope.userId,
       targetKind: canonical.kind,

@@ -344,6 +344,7 @@ beforeEach(() => {
   fakes.getProvider.mockImplementation((id: TimelineShared.integrations.NativeProviderId) => ({
     syncSelectionPolicy: {
       github: integrations.githubProvider,
+      hubspot: integrations.hubspotProvider,
       google_drive: integrations.googleDriveProvider,
       linear: integrations.linearProvider,
       monday: integrations.mondayProvider,
@@ -768,6 +769,29 @@ describe('runOneIntegration attention classification', () => {
         continuationHandoffId: continuationHandoffId(2),
       },
       { delayMs: 180_000 },
+    );
+  });
+
+  it('reconciles HubSpot pipelines after six hours while recently completed pipelines stay idle', async () => {
+    fakes.adminLoadIntegration.mockResolvedValue({ ...integration, provider: 'hubspot' });
+    const due = { kind: 'hubspot.pipeline', externalId: 'sales', label: 'Sales' };
+    const recent = { kind: 'hubspot.pipeline', externalId: 'partners', label: 'Partners' };
+    fakes.adminListSelections.mockResolvedValue([due, recent]);
+    fakes.adminLoadCursor.mockImplementation((_db, _id, resource) =>
+      Promise.resolve(
+        resource === 'sync.recovery'
+          ? {
+              completed: {
+                'hubspot.pipeline:sales': new Date(Date.now() - 6 * 3600_000).toISOString(),
+                'hubspot.pipeline:partners': new Date(Date.now() - 5 * 3600_000).toISOString(),
+              },
+            }
+          : {},
+      ),
+    );
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+    expect(fakes.incrementalSync).toHaveBeenCalledWith(
+      expect.objectContaining({ selections: [due] }),
     );
   });
 

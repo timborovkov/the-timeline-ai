@@ -1,6 +1,6 @@
 # GitHub
 
-GitHub is a native Timeline integration. It is optional for non-engineering teams, but when connected it receives the same first-party treatment as Linear and Google Drive: person-owned OAuth, team source selection, audit rows, encrypted tokens, worker sync, and cited timeline events. Synced external work items can also map to task objects; visible task titles stay human-facing while provider IDs, issue keys, numbers, and URLs stay in integration metadata, aliases, or evidence. Envelope `signalClass` decides extract vs parse: merged PRs and closed issues are captured work and skip the models; workflow runs are pulses; review comments are findings. Timeline `event_class` is the inspector family and does not decide that skip. Merged PRs and closed issues enqueue a coalesced, approval-backed Timeline task update keyed by `repo#number`, not by nearby unrelated events.
+GitHub is a native Timeline integration. It is optional for non-engineering teams, but when connected it receives the same first-party treatment as Linear and Google Drive: person-owned OAuth, team source selection, audit rows, encrypted tokens, worker sync, and cited timeline events. Synced external work items can also map to task objects; visible task titles stay human-facing while provider IDs, issue keys, numbers, and URLs stay in integration metadata, aliases, or evidence. Envelope `signalClass` decides extract vs parse: merged PRs and closed issues are captured work and skip the models; workflow runs are pulses; review comments are findings. Timeline `event_class` is the inspector family and does not decide that skip. An active board import can apply issue and merge updates under the rule approved for that repository. Outside that rule, merged PRs and closed issues can propose a task update keyed by `repo#number` for approval.
 
 1.  Create a GitHub App at [github.com/settings/apps](https://github.com/settings/apps). For an organization-owned app, use the organization's **Settings → Developer settings** page instead. Timeline still uses the app's OAuth web flow for the connecting user, then mints installation access tokens for repository syncs when `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` are configured.
 
@@ -33,3 +33,9 @@ GitHub is a native Timeline integration. It is optional for non-engineering team
 <span id="monday"></span>
 
 Shared prerequisites, health and resync: [integrations](integrations.md).
+
+## Import repository work into a board
+
+From the active source, choose **Import and keep in sync**. Select the destination board and preview issues. Enable merged-PR tracking to record standalone merges as completed tasks in a chosen project. Past merges require the additional history option. Confirm possible matches once. Closing, cancelling or reopening a linked issue updates its task status. Open a card to inspect its source or stop syncing. [Board import authority](../relational-memory.md#one-way-board-imports)
+
+To verify the live workflow, use a disposable repository with the Timeline GitHub App installed. Import an issue that matches an existing task and merge a PR that closes it. Check for one completed task with both source references. With merged-PR tracking enabled, merge a second PR without a linked issue and check for one new completed task in the chosen project. Replay the deliveries or run a catch-up sync, then check the task counts again.

@@ -19,7 +19,9 @@ import {
   parseChatContextTrail,
   pinnedObjectIdFromContext,
 } from '@timeline/shared/chat-context';
+import { CHAT_TITLE_MAX_LENGTH } from '@timeline/shared/conversation-surfaces/titles';
 import { getEnv } from '@timeline/shared/env';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import * as llm from '@timeline/shared/llm';
 import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
@@ -82,8 +84,6 @@ export const dynamic = 'force-dynamic';
 
 const log = childLogger('web:api:chat');
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const CHAT_TITLE_MAX_LENGTH = 48;
 const chatTitleSchema = z.object({
   title: z.string().min(1).max(CHAT_TITLE_MAX_LENGTH),
 });

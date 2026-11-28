@@ -13,6 +13,7 @@ import {
 } from '@timeline/db';
 import { getEnv, qdrant } from '@timeline/shared';
 import { runWorkerBilling } from '@timeline/shared/billing';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 
@@ -23,8 +24,6 @@ import {
   type DemoVectorRows,
 } from '#src/scripts/demo-index-contract.js';
 import { processEmbedJob } from '#src/workers/embed.js';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface Args {
   teamId: string;

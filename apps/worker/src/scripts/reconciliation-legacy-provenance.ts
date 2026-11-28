@@ -12,9 +12,8 @@ import { loadEnvFile } from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 import { closeDb, getDb, type Db } from '@timeline/db';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { auditLegacyProvenanceCutover } from '@timeline/shared/reconciliation';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface Args {
   teamId: string;

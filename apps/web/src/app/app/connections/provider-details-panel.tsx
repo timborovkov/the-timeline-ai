@@ -1,5 +1,6 @@
 'use client';
 
+import { isBoardImportProvider } from '@timeline/db/integration-providers';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -93,6 +94,11 @@ function ProviderTeamSyncSection({
         activeShareIds={model.activeShareIds}
         isAdmin={isAdmin}
       />
+      {isAdmin && connectedRows.length > 0 && isBoardImportProvider(providerId) && (
+        <Link className="text-sm underline" href={'/app/connections/import?provider=' + providerId}>
+          Import and keep in sync
+        </Link>
+      )}
       {connectedRows.length > 0 ? (
         <ConnectedIntegrations
           connected={connectedRows}

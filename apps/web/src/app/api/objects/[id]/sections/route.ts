@@ -1,4 +1,5 @@
 import { cacheKey, cachedJson } from '@timeline/shared/cache';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { withTeam } from '@timeline/shared/team-scope';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -8,7 +9,6 @@ import { db } from '@/lib/db';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SECTIONS = new Set(['events', 'facts', 'changes', 'tasks', 'relationships']);
 type Section = 'events' | 'facts' | 'changes' | 'tasks' | 'relationships';
 

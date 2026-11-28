@@ -1,4 +1,6 @@
-export const DEFAULT_TIMEZONE = 'Europe/Helsinki';
+import { DEFAULT_WORKSPACE_TIMEZONE } from '@timeline/db/contracts/workspace-time';
+
+export const DEFAULT_TIMEZONE = DEFAULT_WORKSPACE_TIMEZONE;
 
 const COMMON_TIMEZONES = [
   DEFAULT_TIMEZONE,

@@ -1,5 +1,6 @@
 import { type Db } from '@timeline/db';
 import { queue } from '@timeline/shared';
+import { NIL_UUID } from '@timeline/shared/identifiers';
 import { generateAndStoreObjectSummary } from '@timeline/shared/objects';
 import { withTeam } from '@timeline/shared/team-scope';
 import { Worker, type Job } from 'bullmq';
@@ -7,8 +8,6 @@ import { Worker, type Job } from 'bullmq';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
-
-const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 export interface ObjectSummaryWorkerDeps {
   db: Db;
@@ -44,7 +43,7 @@ export async function processObjectSummaryJobForTests(
   deps: ObjectSummaryWorkerDeps,
   data: queue.ObjectSummaryJobData,
 ) {
-  const scope = withTeam(deps.db, data.teamId, ZERO_UUID, { skipMembershipCheck: true });
+  const scope = withTeam(deps.db, data.teamId, NIL_UUID, { skipMembershipCheck: true });
   const result = await generateAndStoreObjectSummary(deps.db, scope, data.objectId, {
     trigger: data.trigger ?? 'auto',
   });

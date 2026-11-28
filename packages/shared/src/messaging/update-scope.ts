@@ -10,6 +10,8 @@ import {
   users,
   type Db,
 } from '@timeline/db';
+import { FULL_MEMBER_ROLES } from '@timeline/db/contracts/workspace-access';
+import { DEFAULT_WORKSPACE_TIMEZONE } from '@timeline/db/contracts/workspace-time';
 import { and, desc, eq, exists, inArray, isNotNull, isNull, notExists, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
@@ -28,7 +30,7 @@ import { assertValidTimezone } from '#src/time/index.js';
 
 const workspaceSchedule = alias(updateSchedules, 'workspace_update_default');
 const memberDefault = alias(updateSchedules, 'member_update_default');
-const DEFAULT_TIMEZONE = 'Europe/Helsinki';
+const DEFAULT_TIMEZONE = DEFAULT_WORKSPACE_TIMEZONE;
 const PERSONAL_DELIVERY_SUFFIXES = ['', ':slack_dm_members', ':telegram_dm_members'];
 
 function parseSettings(value: unknown): UpdateSettings | undefined {
@@ -107,7 +109,7 @@ export function createUpdateScope({
           eq(teamMembers.teamId, teamId),
           eq(teamMembers.userId, userId),
           isNull(teamMembers.removedAt),
-          inArray(teamMembers.role, ['owner', 'admin', 'member']),
+          inArray(teamMembers.role, FULL_MEMBER_ROLES),
         ),
       )
       .limit(1);
@@ -443,7 +445,7 @@ export async function listUpdateDispatchCandidates(db: Db) {
       and(
         activeWorkspaceCondition(teamMembers.teamId),
         isNull(teamMembers.removedAt),
-        inArray(teamMembers.role, ['owner', 'admin', 'member']),
+        inArray(teamMembers.role, FULL_MEMBER_ROLES),
         isNull(users.suspendedAt),
         notExists(
           db

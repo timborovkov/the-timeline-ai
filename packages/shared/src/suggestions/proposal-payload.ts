@@ -1,19 +1,13 @@
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { RELATIONSHIP_KINDS } from '@timeline/db/contracts/object-kinds';
+
+import { UUID_RE } from '#src/identifiers.js';
+
 const LOCAL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const LOCAL_REF_RE = /^[a-z0-9][a-z0-9_-]{0,79}$/;
 const DATETIME_LIKE_RE =
   /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/i;
 
-const RELATIONSHIP_KIND_VALUES = [
-  'parent',
-  'child',
-  'related',
-  'blocks',
-  'blocked_by',
-  'duplicate_of',
-] as const;
-
-type RelationshipKind = (typeof RELATIONSHIP_KIND_VALUES)[number];
+type RelationshipKind = (typeof RELATIONSHIP_KINDS)[number];
 
 const RELATIONSHIP_KIND_ALIASES: Record<string, RelationshipKind> = {
   parent: 'parent',
@@ -427,7 +421,7 @@ export function canonicalProposalPayloadIssues(item: ProposalPayloadItem): strin
   }
   if (item.targetKind === 'object_relationship') {
     if (
-      !RELATIONSHIP_KIND_VALUES.includes(payload.kind as RelationshipKind) ||
+      !RELATIONSHIP_KINDS.includes(payload.kind as RelationshipKind) ||
       typeof payload.kind !== 'string'
     ) {
       issues.push('relationship kind is invalid');

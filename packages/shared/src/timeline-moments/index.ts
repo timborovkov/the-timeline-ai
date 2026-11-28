@@ -1,3 +1,5 @@
+import type { EventSource } from '@timeline/db/contracts/event-sources';
+
 import { documentKindLabel, truncateFilenameMiddle } from '#src/documents/presentation.js';
 import {
   classifyCapturedEvent,
@@ -6,28 +8,23 @@ import {
   type TimelineEventClass,
   type TimelineVisualWeight,
 } from '#src/event-class.js';
+import { NATIVE_PROVIDER_LABELS } from '#src/integrations/provider-labels.js';
 import { stableJson } from '#src/reconciliation/stable-json.js';
 
 const ISO_INSTANT_PATTERN = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z\b/g;
 const PROVIDER_LABELS: Record<string, string> = {
-  github: 'GitHub',
-  linear: 'Linear',
+  ...NATIVE_PROVIDER_LABELS,
   jira: 'Jira',
   asana: 'Asana',
   trello: 'Trello',
   basecamp: 'Basecamp',
-  sentry: 'Sentry',
   datadog: 'Datadog',
-  slack: 'Slack',
-  monday: 'Monday.com',
   monday_com: 'Monday.com',
-  google_drive: 'Google Drive',
   drive: 'Google Drive',
   notion: 'Notion',
   confluence: 'Confluence',
   figma: 'Figma',
   salesforce: 'Salesforce',
-  hubspot: 'HubSpot',
   pipedrive: 'Pipedrive',
   attio: 'Attio',
   close: 'Close',
@@ -71,17 +68,7 @@ function providerDisplayName(provider: string | null | undefined): string {
   return PROVIDER_LABELS[normalized] ?? titleCaseWords(provider);
 }
 
-export type TimelineEventSource =
-  | 'web'
-  | 'telegram'
-  | 'email'
-  | 'system'
-  | 'document'
-  | 'meeting'
-  | 'integration'
-  | 'ingest_webhook'
-  | 'calendar'
-  | 'slack';
+export type TimelineEventSource = EventSource;
 
 export interface TimelineMomentEvent {
   id: string;

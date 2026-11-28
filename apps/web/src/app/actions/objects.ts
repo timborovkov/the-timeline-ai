@@ -1,4 +1,5 @@
 'use server';
+import { IDENTITY_FACET_KINDS, RELATIONSHIP_KINDS } from '@timeline/db/contracts/object-kinds';
 import { bucketAnalyticsCount, bucketSearchResultCount } from '@timeline/shared/analytics';
 import { getEnv } from '@timeline/shared/env';
 import * as objects from '@timeline/shared/objects';
@@ -609,15 +610,7 @@ export async function updateObjectMetadataAction(input: unknown): Promise<Object
   });
 }
 
-const identityFacetKindSchema = z.enum([
-  'email',
-  'phone',
-  'telegram',
-  'slack',
-  'github',
-  'timeline_user',
-  'other',
-]);
+const identityFacetKindSchema = z.enum(IDENTITY_FACET_KINDS);
 
 export async function createIdentityFacetAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('create_identity_facet', async () => {
@@ -1142,7 +1135,7 @@ export async function repairObjectMemoryAction(input: unknown): Promise<ObjectAc
 const relationshipSchema = z.object({
   fromEntityId: uuidSchema,
   toEntityId: uuidSchema,
-  kind: z.enum(['parent', 'child', 'related', 'blocks', 'blocked_by', 'duplicate_of']),
+  kind: z.enum(RELATIONSHIP_KINDS),
 });
 
 export async function addRelationshipAction(input: unknown): Promise<ObjectActionState> {

@@ -1,0 +1,26 @@
+{
+  "uid": "thetimeline.cc_app",
+  "type": "app",
+  "config": {
+    "name": "The Timeline",
+    "description": "Import deals from a selected HubSpot pipeline and keep their stages in sync on a Timeline board.",
+    "distribution": "marketplace",
+    "auth": {
+      "type": "oauth",
+      "redirectUrls": ["https://thetimeline.cc/api/integrations/hubspot/callback"],
+      "requiredScopes": ["oauth", "crm.objects.deals.read", "crm.objects.companies.read"],
+      "optionalScopes": [],
+      "conditionallyRequiredScopes": []
+    },
+    "permittedUrls": {
+      "fetch": ["https://api.hubapi.com"],
+      "iframe": [],
+      "img": []
+    },
+    "support": {
+      "supportEmail": "contact@thetimeline.cc",
+      "documentationUrl": "https://thetimeline.cc/help/integrations",
+      "supportUrl": "https://thetimeline.cc/help/support"
+    }
+  }
+}

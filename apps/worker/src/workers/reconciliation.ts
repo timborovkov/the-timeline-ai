@@ -10,6 +10,7 @@ import {
   reconciliationOutputs,
   reconciliationRuns,
 } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import { childLogger, queue, withTeam } from '@timeline/shared';
 import {
   buildAssociationDedupeKey,
@@ -82,7 +83,7 @@ interface ScopedContextEvidence {
   source: string;
   provider: string | null;
   eventType: string;
-  visibility: 'team' | 'private' | 'specific_users';
+  visibility: EventVisibility;
   visibilityOwnerUserId: string | null;
   visibilityUserIds: string[] | null;
 }

@@ -1,3 +1,7 @@
+import type { ExtractedRepresentationKind } from '@timeline/db/contracts/document-kinds';
+import type { EventSource } from '@timeline/db/contracts/event-sources';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
+
 import { getEnv } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import {
@@ -81,18 +85,8 @@ export interface QdrantPayload {
   occurred_at: string;
   author_user_id: string | null;
   visibility_owner_user_id: string | null;
-  source:
-    | 'web'
-    | 'telegram'
-    | 'email'
-    | 'system'
-    | 'document'
-    | 'meeting'
-    | 'integration'
-    | 'calendar'
-    | 'slack'
-    | 'ingest_webhook';
-  visibility: 'team' | 'private' | 'specific_users';
+  source: EventSource;
+  visibility: EventVisibility;
   /**
    * Users explicitly granted visibility when `visibility === 'specific_users'`.
    * Null for `team` and `private` rows. Phase 5 only embeds `team`-visibility
@@ -126,8 +120,7 @@ export interface QdrantPayload {
   /** documents.fileKind. Set only for source_kind='doc_chunk'. */
   file_kind?: 'captured' | 'document' | null;
   /** document_chunks.representationKind. Set only for source_kind='doc_chunk'. */
-  representation_kind?:
-    'source_text' | 'transcript' | 'visual_description' | 'metadata_preview' | null;
+  representation_kind?: ExtractedRepresentationKind | null;
   /** documents.ownerUserId — surfaced for owner filters. */
   owner_user_id: string | null;
   /** document_versions.createdAt as ISO. Lets recency filters work on docs. */

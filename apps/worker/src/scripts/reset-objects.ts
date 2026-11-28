@@ -1,6 +1,7 @@
 /** Operator-only local reset. Stop the development web server before --confirm. */
 import { getDb, closeDb } from '@timeline/db';
 import { queue, suggestions, llm, qdrant, withTeam } from '@timeline/shared';
+import { NIL_UUID } from '@timeline/shared/identifiers';
 import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { Queue } from 'bullmq';
 
@@ -27,7 +28,7 @@ async function main() {
   const args = process.argv.slice(2);
   const teamId = args.find((arg) => arg.startsWith('--team='))?.slice(7);
   if (!teamId || !/^[a-f0-9-]{36}$/i.test(teamId)) throw new Error('Supply --team=<uuid>');
-  const scope = withTeam(getDb(), teamId, '00000000-0000-0000-0000-000000000000', {
+  const scope = withTeam(getDb(), teamId, NIL_UUID, {
     skipMembershipCheck: true,
   });
   let inventory = await scope.engineMaintenance.resetInventory();

@@ -1,3 +1,4 @@
+import { isJobRecoveryKind } from '@timeline/shared/job-recovery/policy';
 import { withTeam } from '@timeline/shared/team-scope';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
@@ -12,15 +13,6 @@ export const metadata: Metadata = {
   title: 'Job recovery',
   description: jobsPageSubtitle(),
 };
-
-const VALID_JOB_KINDS = [
-  'transcription',
-  'extraction',
-  'embedding',
-  'document_processing',
-  'meeting_finalization',
-  'integration_sync',
-] as const;
 
 export const dynamic = 'force-dynamic';
 
@@ -43,10 +35,7 @@ export default async function JobRecoveryPage(props: { searchParams: Promise<{ k
 
   const queue = await scope.jobRecovery.getRecoverableJobQueue();
 
-  const defaultFilter =
-    kind && VALID_JOB_KINDS.includes(kind as (typeof VALID_JOB_KINDS)[number])
-      ? (kind as (typeof VALID_JOB_KINDS)[number])
-      : undefined;
+  const defaultFilter = isJobRecoveryKind(kind) ? kind : undefined;
 
   return (
     <JobsPageView

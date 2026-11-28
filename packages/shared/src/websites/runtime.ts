@@ -5,6 +5,7 @@ import type { Db } from '@timeline/db';
 import { listChargeCentsForMeter } from '#src/billing/charge.js';
 import type { DeferredChatDelivery } from '#src/conversation-surfaces/deferred-delivery.js';
 import { getEnv, isFirecrawlConfigured } from '#src/env.js';
+import { NIL_UUID } from '#src/identifiers.js';
 import { childLogger } from '#src/logger.js';
 import { cancelWebsiteCrawl } from '#src/onboarding/firecrawl-website-scan.js';
 import type { FirstRunScanFailureReason } from '#src/onboarding/first-run.js';
@@ -99,7 +100,7 @@ export async function processPersistentWebsiteScan(
   scanId: string,
 ): Promise<boolean> {
   let scope = withTeam(db, teamId, userId, {
-    skipMembershipCheck: userId === '00000000-0000-0000-0000-000000000000',
+    skipMembershipCheck: userId === NIL_UUID,
   });
   let run;
   try {

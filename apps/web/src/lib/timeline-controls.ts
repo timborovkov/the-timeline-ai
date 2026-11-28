@@ -1,3 +1,4 @@
+import { nativeProviderLabel } from '@timeline/shared/integrations/provider-labels';
 import type { TimelineOriginFilter, TimelineSourceFacet } from '@timeline/shared/team-scope';
 import { localDateFromInstant, localDateSpanToUtcRange } from '@timeline/shared/time';
 
@@ -295,15 +296,7 @@ function originGroupLabel(origin: TimelineOriginFilter): string {
 }
 
 function providerDisplayLabel(provider: string): string {
-  const labels: Record<string, string> = {
-    github: 'GitHub',
-    google_drive: 'Google Drive',
-    linear: 'Linear',
-    monday: 'Monday.com',
-    sentry: 'Sentry',
-    slack: 'Slack integration',
-  };
-  return labels[provider] ?? provider;
+  return provider === 'slack' ? 'Slack integration' : nativeProviderLabel(provider);
 }
 
 export function parseTimelineImpact(input: string | undefined): ImpactKind | undefined {

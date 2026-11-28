@@ -1,3 +1,4 @@
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { meetingRecoveryAction, type MeetingRow } from '@timeline/shared/meetings';
 import { withTeam } from '@timeline/shared/team-scope';
 import { Captions, ExternalLink } from 'lucide-react';
@@ -35,8 +36,6 @@ export const metadata: Metadata = {
 interface Props {
   params: Promise<{ id: string }>;
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function renderMeetingHeaderActions({
   meetingId,

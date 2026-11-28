@@ -1,3 +1,4 @@
+import { WEBSITE_SCAN_FREQUENCIES } from '@timeline/db/contracts/website-schedule';
 import { resolveMcpBearer } from '@timeline/shared/mcp-server';
 import { withTeam } from '@timeline/shared/team-scope';
 import { z } from 'zod';
@@ -14,7 +15,7 @@ export const websiteInput = z.strictObject({
   permissionConfirmed: z.literal(true),
 });
 export const scheduleInput = z.strictObject({
-  frequency: z.enum(['manual', 'daily', 'weekly']),
+  frequency: z.enum(WEBSITE_SCAN_FREQUENCIES),
   time: z.string(),
   weekday: z.number().int().min(1).max(7),
   timezone: z.string().max(100),

@@ -7,6 +7,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import type { ExtractedRepresentationKind } from '@timeline/db/contracts/document-kinds';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { readJson } from '@/lib/api-response';
@@ -293,7 +294,7 @@ interface DocumentSearchHit {
   documentVersionId: string;
   documentChunkId: string;
   fileKind: 'captured' | 'document';
-  representationKind: 'source_text' | 'transcript' | 'visual_description' | 'metadata_preview';
+  representationKind: ExtractedRepresentationKind;
   version: number;
   chunkIndex: number;
   pageNumber: number | null;

@@ -1,6 +1,6 @@
-import { eventSource, integrationProvider } from '@timeline/db';
+import { eventSource } from '@timeline/db';
+import { NATIVE_PROVIDER_IDS, type NativeProviderId } from '@timeline/db/integration-providers';
 
-type IntegrationProvider = Exclude<(typeof integrationProvider.enumValues)[number], 'mcp'>;
 type EventSource = (typeof eventSource.enumValues)[number];
 
 export interface ExplicitRetrievalRequest {
@@ -17,18 +17,16 @@ const EXPLICIT_RETRIEVAL_TOOL_NAMES = [
   'search_timeline',
 ] as const;
 
-const INTEGRATION_PROVIDERS = integrationProvider.enumValues
-  .filter((provider) => provider !== 'mcp')
-  .join('|');
+const INTEGRATION_PROVIDERS = NATIVE_PROVIDER_IDS.join('|');
 
-function providerNear(question: string, toolName: string): IntegrationProvider | undefined {
+function providerNear(question: string, toolName: string): NativeProviderId | undefined {
   const localArgs = toolLocalArgs(question, toolName);
   if (localArgs === undefined) return undefined;
   const match = new RegExp(
     `\\bprovider\\s*(?::|=|\\bwith)?\\s*(${INTEGRATION_PROVIDERS})\\b`,
     'i',
   ).exec(localArgs);
-  return match?.[1]?.toLowerCase() as IntegrationProvider | undefined;
+  return match?.[1]?.toLowerCase() as NativeProviderId | undefined;
 }
 
 function externalObjectIdNear(question: string, toolName: string): string | undefined {

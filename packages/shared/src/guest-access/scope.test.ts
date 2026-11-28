@@ -268,6 +268,10 @@ describe('guest access', () => {
     expect(await db.select().from(billingFreeGrants)).toHaveLength(0);
     expect(await db.select().from(billingUsageLedger)).toHaveLength(0);
     await expect(recipient.timeline.getEvent(shared)).rejects.toThrow('Not a member');
+    await expect(recipient.boardImports.options()).rejects.toThrow('Not a member');
+    await expect(recipient.boardImports.ownership({ entityId: recordId })).rejects.toThrow(
+      'Not a member',
+    );
     await expect(recipient.objects.getObject(recordId)).rejects.toThrow('Not a member');
     await expect(recipient.timeline.listEvents()).rejects.toThrow('Not a member');
     await expect(recipient.timeline.listMembers()).rejects.toThrow('Not a member');

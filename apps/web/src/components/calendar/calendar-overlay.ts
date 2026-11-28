@@ -1,3 +1,5 @@
+import type { CalendarShowAs } from '@timeline/shared/calendar/contract';
+
 export interface CalendarLinkedObject {
   id: string;
   title: string;
@@ -14,7 +16,7 @@ export interface CalendarEvent {
   timezone: string;
   allDay: boolean;
   location: string | null;
-  showAs: 'busy' | 'free' | 'tentative';
+  showAs: CalendarShowAs;
   rrule: string | null;
   recurringParentId: string | null;
   originalStartAt: string | null;

@@ -131,6 +131,8 @@ A later outcome can propose completion only when the related evidence uniquely i
 
 ### Authority matrix
 
+These defaults apply to captured evidence. A separately confirmed board import grants creation and field-update authority within its selected source and destination. [One-way board imports](#one-way-board-imports)
+
 | Field | Authoritative without Timeline approval | Needs a proposal |
 | --- | --- | --- |
 | Provider cluster status for the object the provider owns | That provider, via `objectMap` / reconciliation | — |
@@ -339,7 +341,13 @@ conservative, not a complete global mailbox-provider registry. Relationships rem
 approval-backed. New person proposals can use a local reference for their separate
 email-facet proposal; approval resolves it only after the person exists.
 
+### One-way board imports
+
+A team admin can preview and confirm a rule for one active team-shared GitHub repository, Linear team, or HubSpot pipeline and destination board. This authorizes deterministic changes to the linked task status or card lane. A confirmed identity survives a rename. Source events stay immutable and import receipts identify each source decision. Ambiguous identities wait for an admin to resolve them in the import preview. Paused HubSpot deals can resume on re-entry, and stopping sync on a field restores local control. Unstructured evidence and proposal approvals follow their existing paths. [Import workflow](setup/integrations.md#import-and-keep-in-sync) · [HubSpot setup](setup/hubspot.md)
+
 ### GitHub completed work
+
+An enabled repository import handles the selected issue lifecycle and merged-PR events directly. Issue completion, cancellation and reopening map to Done, Cancelled and To do. A provider-confirmed closing relationship connects a fixing PR to the linked task. Optional merged-PR tracking can create a completed task in the selected project. The following approval-backed behavior applies outside the import rule.
 
 Structured integration events bypass the suggestion model. The captured-work
 matcher first looks for existing tasks and pending task creates using provider

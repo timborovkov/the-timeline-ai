@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { auditLog, teams, teamMembers, evaluationTraceProjects, type Db } from '@timeline/db';
+import type { TeamRole } from '@timeline/db/contracts/workspace-access';
 import { and, eq, isNull } from 'drizzle-orm';
 
 import { getEnv } from '#src/env.js';
@@ -19,7 +20,7 @@ export function createEvaluationTracingScope({
   db: Db;
   teamId: string;
   userId: string;
-  ensureMember: (role?: 'member' | 'admin' | 'owner') => Promise<unknown>;
+  ensureMember: (role?: TeamRole) => Promise<unknown>;
 }) {
   async function settings() {
     await ensureMember();

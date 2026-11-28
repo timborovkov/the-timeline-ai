@@ -7,11 +7,13 @@ import {
   rawEvents,
   users,
 } from '@timeline/db';
+import type {
+  EventVisibility as Visibility,
+  TeamRole,
+} from '@timeline/db/contracts/workspace-access';
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import { rawEventVisibleToUser } from '#src/visibility.js';
-
-type Visibility = 'private' | 'team' | 'specific_users';
 
 export type AuditAction =
   | 'event.detail_read'
@@ -112,7 +114,7 @@ export function createAuditScope(deps: {
   db: Db;
   teamId: string;
   userId: string;
-  ensureMember: (minRole?: 'member' | 'admin' | 'owner') => Promise<unknown>;
+  ensureMember: (minRole?: TeamRole) => Promise<unknown>;
 }) {
   const { db, teamId, userId, ensureMember } = deps;
 

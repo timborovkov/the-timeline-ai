@@ -1,5 +1,6 @@
 'use client';
 
+import { IDENTITY_FACET_KINDS } from '@timeline/db/contracts/object-kinds';
 import { objectSupportsIdentityFacets } from '@timeline/shared/objects/identity-facets';
 import type * as objects from '@timeline/shared/objects/types';
 import { Plus, X } from 'lucide-react';
@@ -18,16 +19,6 @@ import { notifyAction } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
 import { cn } from '@/lib/utils';
 
-const FACET_KINDS = [
-  'email',
-  'phone',
-  'telegram',
-  'slack',
-  'github',
-  'timeline_user',
-  'other',
-] as const;
-
 export function ObjectContactFields({
   detail,
   disabled = false,
@@ -39,7 +30,7 @@ export function ObjectContactFields({
   const formId = useId();
   const [pending, startTransition] = useTransition();
   const [adding, setAdding] = useState(false);
-  const [kind, setKind] = useState<(typeof FACET_KINDS)[number]>('email');
+  const [kind, setKind] = useState<(typeof IDENTITY_FACET_KINDS)[number]>('email');
   const [value, setValue] = useState('');
 
   if (!objectSupportsIdentityFacets(detail.type)) return null;
@@ -133,12 +124,12 @@ export function ObjectContactFields({
             id={`${formId}-kind`}
             value={kind}
             onChange={(event) => {
-              setKind(event.target.value as (typeof FACET_KINDS)[number]);
+              setKind(event.target.value as (typeof IDENTITY_FACET_KINDS)[number]);
             }}
             className={RAIL_UNDERLINE_CONTROL}
             aria-label="Contact kind"
           >
-            {FACET_KINDS.map((option) => (
+            {IDENTITY_FACET_KINDS.map((option) => (
               <option key={option} value={option}>
                 {statusLabel(option)}
               </option>

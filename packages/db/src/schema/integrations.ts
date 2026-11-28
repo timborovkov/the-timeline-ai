@@ -14,6 +14,8 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { NIL_UUID } from '#src/contracts/identifiers.js';
+import { NATIVE_PROVIDER_IDS } from '#src/integration-providers.js';
 import { entities } from '#src/schema/entities.js';
 import { eventVisibility } from '#src/schema/raw-events.js';
 import { rawEvents } from '#src/schema/raw-events.js';
@@ -35,15 +37,7 @@ const bytea = customType<{ data: Buffer; default: false }>({
   },
 });
 
-export const integrationProvider = pgEnum('integration_provider', [
-  'google_drive',
-  'linear',
-  'github',
-  'monday',
-  'slack',
-  'sentry',
-  'mcp',
-]);
+export const integrationProvider = pgEnum('integration_provider', [...NATIVE_PROVIDER_IDS, 'mcp']);
 
 export const connectionAttentionCategory = pgEnum('connection_attention_category', [
   'needs_reconnect',
@@ -450,9 +444,9 @@ export const connectionAttention = pgTable(
       .on(
         table.teamId,
         table.category,
-        sql`COALESCE(${table.providerConnectionId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
-        sql`COALESCE(${table.integrationId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
-        sql`COALESCE(${table.resourceShareId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+        sql`COALESCE(${table.providerConnectionId}, ${NIL_UUID}::uuid)`.inlineParams(),
+        sql`COALESCE(${table.integrationId}, ${NIL_UUID}::uuid)`.inlineParams(),
+        sql`COALESCE(${table.resourceShareId}, ${NIL_UUID}::uuid)`.inlineParams(),
       )
       .where(sql`${table.resolvedAt} IS NULL`),
     index('connection_attention_team_idx').on(table.teamId),

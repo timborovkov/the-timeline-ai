@@ -1,9 +1,8 @@
 import { type ChatContextRef, parseChatContextTrail } from '@timeline/shared/chat-context';
+import { UUID_RE } from '@timeline/shared/identifiers';
 
 import type { DashboardChatContext } from '@/lib/dashboard-chat-context';
 import { parseStoredDashboardContext } from '@/lib/dashboard-chat-context';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const CHAT_HANDOFF_MAX_AGE_MS = 5 * 60 * 1000;
 export const CHAT_HANDOFF_MAX_PROMPT_LENGTH = 4_000;

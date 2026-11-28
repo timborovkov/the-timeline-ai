@@ -65,6 +65,7 @@ const NATIVE_AND_CAPTURE_NAV_ITEMS = [
   },
   { href: '/integrations/google-drive' as const, label: 'Google Drive' },
   { href: '/integrations/github' as const, label: 'GitHub' },
+  { href: '/integrations/hubspot' as const, label: 'HubSpot' },
   { href: '/integrations/linear' as const, label: 'Linear' },
   { href: '/integrations/monday' as const, label: 'Monday.com' },
   { href: '/integrations/sentry' as const, label: 'Sentry' },

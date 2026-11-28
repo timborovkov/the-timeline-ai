@@ -11,6 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { closeDb, getDb } from '@timeline/db';
 import { llm, suggestions, withTeam } from '@timeline/shared';
 import { isBillingAdmissionError } from '@timeline/shared/billing';
+import { NIL_UUID, UUID_RE } from '@timeline/shared/identifiers';
 import { z } from 'zod';
 
 import {
@@ -20,8 +21,7 @@ import {
   type EventRow,
 } from '#src/scripts/dedupe-calendar-events-core.js';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
+const PSEUDO_USER = NIL_UUID;
 const PAGE_SIZE = 500;
 const DEFAULT_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000;
 /** Keep AI batches small enough that duplicate-group JSON fits the default 8k cap. */

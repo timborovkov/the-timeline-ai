@@ -158,7 +158,7 @@ export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOption
   // Fixture service URLs/credentials stay configurable, but ordinary E2E runs
   // must never inherit exported provider or telemetry credentials from a shell.
   const providerVariable =
-    /^(?:OPENROUTER_|OPENAI_|ANTHROPIC_|LANGSMITH_|SENTRY_|NEXT_PUBLIC_SENTRY_|NEXT_PUBLIC_POSTHOG_|POSTHOG_|GITHUB_|AUTH_GITHUB_|SLACK_|TELEGRAM_|RESEND_|DAYTONA_|RECALL_|POLAR_|FIRECRAWL_|LINEAR_|MONDAY_|GOOGLE_|TURNSTILE_|NEXT_PUBLIC_TURNSTILE_|CRON_|ANALYTICS_)/;
+    /^(?:OPENROUTER_|OPENAI_|ANTHROPIC_|LANGSMITH_|SENTRY_|NEXT_PUBLIC_SENTRY_|NEXT_PUBLIC_POSTHOG_|POSTHOG_|GITHUB_|HUBSPOT_|AUTH_GITHUB_|SLACK_|TELEGRAM_|RESEND_|DAYTONA_|RECALL_|POLAR_|FIRECRAWL_|LINEAR_|MONDAY_|GOOGLE_|TURNSTILE_|NEXT_PUBLIC_TURNSTILE_|CRON_|ANALYTICS_)/;
   for (const key of Object.keys(env)) {
     if (providerVariable.test(key)) delete env[key];
   }

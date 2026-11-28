@@ -67,6 +67,7 @@ import {
   formatDriveSpreadsheetWorkbook,
   quoteSheetsA1SheetName,
 } from '#src/integrations/google-drive-spreadsheet.js';
+import { NATIVE_PROVIDER_LABELS } from '#src/integrations/provider-labels.js';
 import { providerFetch } from '#src/integrations/request.js';
 import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import { exactTargetSelections } from '#src/integrations/selection-policy.js';
@@ -1750,7 +1751,7 @@ async function refreshForSync(tokens: unknown, ctx: DriveSyncContext): Promise<D
 
 export const googleDriveProvider: IntegrationProvider = {
   id: 'google_drive',
-  displayLabel: 'Google Drive',
+  displayLabel: NATIVE_PROVIDER_LABELS.google_drive,
   syncSelectionPolicy: {
     recovery: 'shared_cursor',
     resolveTarget(selections, target) {

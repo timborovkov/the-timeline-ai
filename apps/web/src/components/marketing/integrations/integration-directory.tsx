@@ -25,8 +25,9 @@ import { Button } from '@/components/ui/button';
 
 const CONNECTOR_SUMMARIES: Record<string, string> = {
   slack: 'Selected channel messages, threads and file-share metadata.',
+  hubspot: 'Deals, associated companies, and stage changes from selected pipelines.',
   github: 'Issues, pull requests, reviews, releases and commits.',
-  linear: 'Issues, projects and comments, with their history connected.',
+  linear: 'Import issues from a Linear team and sync their task statuses.',
   'google-drive': 'Selected documents and their context, with supported file text.',
   monday: 'Boards, items and updates connected to the surrounding work.',
   sentry: 'Issues, alerts and releases alongside the code and discussion.',
@@ -79,7 +80,7 @@ export function IntegrationDirectory() {
               </a>
               <a href="#native">
                 <strong>Sync selected history</strong>
-                <span>Six native integrations, with source records kept together.</span>
+                <span>Native integrations, with source records kept together.</span>
                 <ArrowRight aria-hidden="true" size={20} />
               </a>
               <a href="#live-lookup">

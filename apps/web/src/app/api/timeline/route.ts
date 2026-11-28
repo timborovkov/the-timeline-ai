@@ -1,5 +1,6 @@
 import { users } from '@timeline/db';
 import { cacheKey, cachedJson } from '@timeline/shared/cache';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
@@ -32,7 +33,6 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function parseTimelineMode(input: string | null): 'moments' | 'events' {
   return input === 'events' ? 'events' : 'moments';
 }

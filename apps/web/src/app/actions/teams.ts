@@ -10,6 +10,7 @@ import {
   telegramChatBindings,
   users,
 } from '@timeline/db';
+import { isFullMemberRole, type TeamRole } from '@timeline/db/contracts/workspace-access';
 import { createOwnedWorkspace } from '@timeline/shared/agent-provisioning';
 import {
   assertTeamMemberSeatCapacity,
@@ -312,7 +313,7 @@ export async function updateDigestPreferenceAction(
     if (retry && previous.retryScheduleTeamId !== active.teamId)
       return { error: 'Reopen the digest settings to retry scheduling.' };
     const enabled = retry || formData.get('dailyDigestEnabled') === 'on';
-    if (!retry && ['owner', 'admin', 'member'].includes(role)) {
+    if (!retry && isFullMemberRole(role)) {
       const { schedule } = await scope.updates.current(DEFAULT_UPDATE_KEY);
       if (schedule) {
         if (schedule.settings.enabled === enabled) return { ok: true };
@@ -344,8 +345,7 @@ export async function updateDigestPreferenceAction(
       .limit(1);
 
     const preference = existing[0];
-    const configured =
-      Boolean(preference?.updateOptions) && ['owner', 'admin', 'member'].includes(role);
+    const configured = Boolean(preference?.updateOptions) && isFullMemberRole(role);
     if (retry && (!preference?.dailyDigestEnabled || !configured))
       return { error: 'There is no active update schedule to retry.' };
     const changed = !retry && (preference ? preference.dailyDigestEnabled !== enabled : !enabled);
@@ -765,7 +765,7 @@ export async function inviteMemberAction(
     if (!parsed.success) return { error: 'Invalid email' };
 
     const scope = withTeam(db, active.teamId, session.user.id);
-    let callerRole: 'owner' | 'admin' | 'member';
+    let callerRole: TeamRole;
     try {
       callerRole = await scope.requireMembership('admin');
       if (parsed.data.role === 'admin' && callerRole !== 'owner') {

@@ -1,4 +1,5 @@
 import { type Db, entities, notifications, teams, teamCalendarSettings } from '@timeline/db';
+import { DEFAULT_WORKSPACE_TIMEZONE } from '@timeline/db/contracts/workspace-time';
 import { childLogger, queue } from '@timeline/shared';
 import {
   activeWorkspaceCondition,
@@ -21,7 +22,6 @@ const PAGE_SIZE = 500;
 // page is just delayed by one hour. Better to bound worst-case work per
 // tick than to lock up a worker for hours on a degenerate workspace.
 const MAX_ENTITIES_PER_TICK = 50_000;
-const DEFAULT_WORKSPACE_TIMEZONE = 'Europe/Helsinki';
 
 const log = childLogger('worker:overdue');
 

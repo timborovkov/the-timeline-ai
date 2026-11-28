@@ -17,6 +17,7 @@ describe('public marketing copy', () => {
       'Telegram',
       'Google Drive',
       'GitHub',
+      'HubSpot',
       'Linear',
       'Monday.com',
       'Sentry',
@@ -27,6 +28,7 @@ describe('public marketing copy', () => {
       TELEGRAM_PAGE.route,
       '/integrations/google-drive',
       '/integrations/github',
+      '/integrations/hubspot',
       '/integrations/linear',
       '/integrations/monday',
       '/integrations/sentry',
@@ -56,7 +58,6 @@ describe('public marketing copy', () => {
     );
     expect(comingSoonRoutes).toEqual([
       '/integrations/jira',
-      '/integrations/hubspot',
       '/integrations/attio',
       '/integrations/pipedrive',
     ]);

@@ -1,4 +1,6 @@
-export type CalendarRecurrenceEditMode = 'single' | 'series' | 'this_and_future';
+import type { CalendarRecurrenceEditMode } from '#src/calendar/contract.js';
+
+export type { CalendarRecurrenceEditMode };
 
 export function calendarEventMutationLockKey(teamId: string, eventId: string): string {
   return `calendar-event-mutation:${teamId}:${eventId}`;

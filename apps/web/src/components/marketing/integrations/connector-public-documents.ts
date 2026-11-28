@@ -33,7 +33,7 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
     section: 'integrations',
     order: 0,
     summary:
-      'Directory of first-party capture surfaces and six native provider-record connectors, with capability tiers, setup, and honest limits.',
+      'Directory of first-party capture surfaces and native provider-record connectors, with capability tiers, setup, and honest limits.',
     fullSummary: 'Integration, capture-surface, and capability-tier reference.',
     sections: [
       { title: MEETING_CAPTURE_FAQ.question, body: MEETING_CAPTURE_FAQ.answer },

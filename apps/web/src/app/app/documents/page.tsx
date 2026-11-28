@@ -1,4 +1,5 @@
 import { users } from '@timeline/db';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import type { Metadata } from 'next';
@@ -18,8 +19,6 @@ export const metadata: Metadata = {
   title: 'Documents',
   description: 'Browse team documents and folders.',
 };
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface Props {
   searchParams: Promise<{ folder?: string }>;

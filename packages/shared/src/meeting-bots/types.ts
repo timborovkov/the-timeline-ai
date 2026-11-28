@@ -1,3 +1,5 @@
+import type { MeetingPlatform } from '@timeline/db/contracts/meeting-platforms';
+
 // Phase 10 — Meeting bot provider interface.
 //
 // One provider implementation per backend (Recall.ai today; Attendee.dev /
@@ -5,7 +7,7 @@
 // `getMeetingBotProvider()` and never reference Recall types directly, so a
 // later swap is a one-file change.
 
-export type MeetingPlatform = 'meet' | 'teams' | 'zoom';
+export type { MeetingPlatform };
 
 export interface JoinMeetingInput {
   /** Internal meeting id used only for local logs and state correlation. */

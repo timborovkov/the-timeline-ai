@@ -31,6 +31,7 @@ import {
   documentProposalEvidenceIsCurrent,
   documentSummarySourcesAreCurrent,
 } from '#src/documents/visibility.js';
+import { NIL_UUID, UUID_RE } from '#src/identifiers.js';
 import { chatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS, truncateTextToTokenBudget } from '#src/llm/models.js';
 import * as queue from '#src/queue/queues.js';
@@ -38,8 +39,6 @@ import type { TeamScopeCore } from '#src/team-scope.js';
 
 const OBJECT_SUMMARY_PROMPT_VERSION = 'object-summary-v1';
 const OBJECT_SUMMARY_AUTO_DELAY_MS = 2 * 60 * 1000;
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const sourceRefSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('field'), id: z.string().min(1) }),
@@ -1105,7 +1104,7 @@ export async function generateAndStoreObjectSummary(
         errorCode: packet.cannotGenerateReason,
         finishedAt: new Date(),
       })
-      .where(eq(objectSummaryRuns.id, runId ?? '00000000-0000-0000-0000-000000000000'));
+      .where(eq(objectSummaryRuns.id, runId ?? NIL_UUID));
     await db
       .delete(objectSummaries)
       .where(and(eq(objectSummaries.teamId, scope.teamId), eq(objectSummaries.entityId, entityId)));

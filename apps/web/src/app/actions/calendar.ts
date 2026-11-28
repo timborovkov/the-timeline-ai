@@ -1,4 +1,10 @@
 'use server';
+import {
+  CALENDAR_AVAILABILITIES,
+  RECURRENCE_EDIT_SCOPES,
+  type CalendarRecurrenceEditMode,
+} from '@timeline/shared/calendar/contract';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { childLogger } from '@timeline/shared/logger';
 import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
@@ -14,8 +20,6 @@ import { reportCaughtError } from '@/lib/sentry-report';
 import { visibilitySchema } from '@/lib/visibility';
 
 const log = childLogger('web:actions:calendar');
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface Result {
   ok: boolean;
@@ -55,7 +59,7 @@ const createSchema = z.object({
   timezone: z.string().max(100).default('UTC'),
   allDay: z.boolean().default(false),
   location: z.string().trim().max(500).optional(),
-  showAs: z.enum(['busy', 'free', 'tentative']).default('busy'),
+  showAs: z.enum(CALENDAR_AVAILABILITIES).default('busy'),
   rrule: z.string().trim().max(2000).nullable().optional(),
   visibility: visibilitySchema.default('team'),
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
@@ -122,9 +126,9 @@ const updateSchema = z.object({
   timezone: z.string().max(100).optional(),
   allDay: z.boolean().optional(),
   location: z.string().trim().max(500).optional(),
-  showAs: z.enum(['busy', 'free', 'tentative']).optional(),
+  showAs: z.enum(CALENDAR_AVAILABILITIES).optional(),
   rrule: z.string().trim().max(2000).nullable().optional(),
-  recurrenceEditMode: z.enum(['single', 'series', 'this_and_future']).optional(),
+  recurrenceEditMode: z.enum(RECURRENCE_EDIT_SCOPES).optional(),
   visibility: visibilitySchema.optional(),
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
   reminderMinutes: z.number().int().min(0).max(1440).optional(),
@@ -199,7 +203,7 @@ export async function updateCalendarEventAction(
 
 export async function deleteCalendarEventAction(
   id: string,
-  opts: { recurrenceEditMode?: 'single' | 'series' | 'this_and_future' } = {},
+  opts: { recurrenceEditMode?: CalendarRecurrenceEditMode } = {},
 ): Promise<Result> {
   return runSentryServerAction('delete_calendar_event', async () => {
     if (!UUID_RE.test(id)) return { ok: false, error: 'Invalid event id' };

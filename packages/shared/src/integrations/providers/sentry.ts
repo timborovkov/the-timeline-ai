@@ -1,4 +1,5 @@
 import { getEnv } from '#src/env.js';
+import { NATIVE_PROVIDER_LABELS } from '#src/integrations/provider-labels.js';
 import { providerFetch } from '#src/integrations/request.js';
 import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import { exactTargetSelections } from '#src/integrations/selection-policy.js';
@@ -874,7 +875,7 @@ async function syncSentryResources(
 
 export const sentryProvider: IntegrationProvider = {
   id: 'sentry',
-  displayLabel: 'Sentry',
+  displayLabel: NATIVE_PROVIDER_LABELS.sentry,
   syncSelectionPolicy: {
     recovery: 'per_resource',
     resolveTarget(selections, target) {

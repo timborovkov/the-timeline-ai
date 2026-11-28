@@ -38,7 +38,7 @@ those assets before claiming a provider-free documentation surface.
 
 Current categories include:
 
-- GitHub, Google Drive, Linear, Monday.com, Slack, and Sentry native
+- GitHub, HubSpot, Google Drive, Linear, Monday.com, Slack, and Sentry native
   integrations;
 - Telegram and Slack conversation surfaces;
 - Notion, Atlassian Jira/Confluence, Stripe, Figma, and other catalog MCP

@@ -1,5 +1,6 @@
 import { calendarEvents, type Db } from '@timeline/db';
 import { childLogger, queue, withTeam } from '@timeline/shared';
+import { NIL_UUID } from '@timeline/shared/identifiers';
 import {
   activeWorkspaceCondition,
   isInactiveWorkspaceError,
@@ -12,7 +13,7 @@ import { captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 import { processCalendarMaintenance } from '#src/workers/calendarMaintenance.js';
 
-const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
+const PSEUDO_USER = NIL_UUID;
 const TEAM_PAGE_SIZE = 1000;
 const log = childLogger('worker:calendar-recurrence');
 

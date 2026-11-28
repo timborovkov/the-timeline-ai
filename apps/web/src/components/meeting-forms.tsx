@@ -1,5 +1,6 @@
 'use client';
 
+import type { EventVisibility as Visibility } from '@timeline/db/contracts/workspace-access';
 import type { SavedMeetingRow } from '@timeline/shared/meetings';
 import { Archive, LogIn, SkipForward } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -26,7 +27,6 @@ import { DEFAULT_TIMEZONE } from '@/lib/timezones';
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
 const INCOMPLETE_SCHEDULE_ERROR =
   'Add at least one start time and one day before saving a schedule.';
-type Visibility = 'team' | 'private' | 'specific_users';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 const WEEKDAY_NAMES = [
   'Sunday',

@@ -11,6 +11,11 @@ import {
   savedMeetings,
   teamMeetingSettings,
 } from '@timeline/db';
+import type { MeetingPlatform } from '@timeline/db/contracts/meeting-platforms';
+import type {
+  EventVisibility as Visibility,
+  TeamRole,
+} from '@timeline/db/contracts/workspace-access';
 import {
   and,
   asc,
@@ -48,8 +53,6 @@ import { validateVisibilityUserIds } from '#src/visibility.js';
 
 const log = childLogger('meetings');
 
-type Visibility = 'private' | 'team' | 'specific_users';
-type MeetingPlatform = 'meet' | 'teams' | 'zoom';
 type MeetingStatus =
   | 'pending'
   | 'scheduled'
@@ -80,7 +83,7 @@ export interface MeetingScopeDeps {
   db: Db;
   teamId: string;
   userId: string;
-  ensureMember: (role?: 'member' | 'admin' | 'owner') => Promise<unknown>;
+  ensureMember: (role?: TeamRole) => Promise<unknown>;
   requireTeamMember?: (otherUserId: string) => Promise<void>;
 }
 

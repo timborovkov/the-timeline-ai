@@ -1,4 +1,5 @@
 import { teamBillingAccounts, teamMembers, teams } from '@timeline/db';
+import type { TeamRole } from '@timeline/db/contracts/workspace-access';
 import {
   operatorContext,
   assertActivePrincipal,
@@ -21,7 +22,7 @@ export interface TeamMembership {
   teamId: string;
   teamName: string;
   teamSlug: string;
-  role: 'owner' | 'admin' | 'member';
+  role: TeamRole;
 }
 
 async function listMemberships(userId: string): Promise<TeamMembership[]> {

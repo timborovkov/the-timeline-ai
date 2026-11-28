@@ -1,3 +1,4 @@
+import { FULL_MEMBER_ROLES } from '@timeline/db/contracts/workspace-access';
 import type { DirectoryOptions } from '@timeline/shared/platform-admin';
 import Link from 'next/link';
 
@@ -129,7 +130,7 @@ export function AdminMembershipFilters({ options }: { options: DirectoryOptions 
         Role
         <select name="role" defaultValue={options.role ?? ''} className={`${field} block`}>
           <option value="">All roles</option>
-          {['owner', 'admin', 'member'].map((role) => (
+          {FULL_MEMBER_ROLES.map((role) => (
             <option key={role}>{role}</option>
           ))}
         </select>

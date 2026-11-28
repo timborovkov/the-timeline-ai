@@ -1,4 +1,4 @@
-import type * as jobRecovery from '@timeline/shared/job-recovery';
+import { JOB_RECOVERY_KINDS } from '@timeline/shared/job-recovery/policy';
 import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -9,17 +9,8 @@ import { db } from '@/lib/db';
 import { bulkRecoveryAuditRecord, recordRecoveryAuditBestEffort } from '@/lib/job-recovery-audit';
 import { publicApiErrorResponse } from '@/lib/public-error';
 
-const JOB_KINDS = [
-  'transcription',
-  'extraction',
-  'embedding',
-  'document_processing',
-  'meeting_finalization',
-  'integration_sync',
-] as const satisfies readonly jobRecovery.JobRecoveryKind[];
-
 const schema = z.object({
-  kind: z.enum(JOB_KINDS).optional(),
+  kind: z.enum(JOB_RECOVERY_KINDS).optional(),
   window: z.enum(['recent', 'older']),
 });
 

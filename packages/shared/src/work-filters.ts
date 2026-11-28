@@ -1,4 +1,5 @@
 import type { BoardItemFilter } from '#src/boards/index.js';
+import { UUID_RE } from '#src/identifiers.js';
 import { OBJECT_TYPES } from '#src/objects/types.js';
 import type { ObjectListFilter, ObjectType } from '#src/objects/types.js';
 import {
@@ -58,7 +59,6 @@ interface WorkFilterTimeContext {
 type WorkFilterTimeInput = Date | WorkFilterTimeContext;
 
 const OBJECT_TYPE_SET = new Set<string>(OBJECT_TYPES);
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function parseWorkFilters(
   params: FilterSearchParams,

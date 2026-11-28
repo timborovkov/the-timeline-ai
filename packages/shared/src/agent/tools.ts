@@ -1,8 +1,12 @@
 import { eventSource, getDb, type Db } from '@timeline/db';
+import { BOARD_TEMPLATE_KINDS } from '@timeline/db/contracts/board-kinds';
+import { IDENTITY_FACET_KINDS, RELATIONSHIP_KINDS } from '@timeline/db/contracts/object-kinds';
+import { EVENT_VISIBILITIES } from '@timeline/db/contracts/workspace-access';
 import { jsonSchema, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
 import { fenceExternalContent } from '#src/agent/external-content.js';
+import { RETRIEVAL_RANKING_MODES } from '#src/agent/retrieval-contract.js';
 import { retrieveWorkspaceContextInput } from '#src/agent/retrieval-contract.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
 import {
@@ -14,7 +18,13 @@ import {
 import { buildWorkspaceTools } from '#src/agent/workspace-tools.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
 import type * as boards from '#src/boards/index.js';
+import { CALENDAR_AVAILABILITIES, RECURRENCE_EDIT_SCOPES } from '#src/calendar/contract.js';
 import { artifactRefCitation } from '#src/citation.js';
+import { NIL_UUID, UUID_RE } from '#src/identifiers.js';
+import {
+  searchIntegrationEventsInput,
+  getIntegrationResourceInput,
+} from '#src/integrations/tool-inputs.js';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
 import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
@@ -112,7 +122,6 @@ function proposalMetadata(
   };
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const INTEGRATION_SEARCH_MAX_EVENT_IDS = 10_000;
 
 const sourceKindSchema = z.enum([
@@ -150,7 +159,7 @@ const movePinInputSchema = z
   );
 
 const searchTimelineInput = z.object({
-  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
+  ranking: z.enum(RETRIEVAL_RANKING_MODES).optional(),
   query: z.string().trim().min(1).max(500),
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),
@@ -237,14 +246,7 @@ const relationshipMemoryItemSchema = z
     toEntityId: z.string().regex(UUID_RE).optional(),
     fromName: z.string().trim().min(1).max(200).optional(),
     toName: z.string().trim().min(1).max(200).optional(),
-    relationshipKind: z.enum([
-      'parent',
-      'child',
-      'related',
-      'blocks',
-      'blocked_by',
-      'duplicate_of',
-    ]),
+    relationshipKind: z.enum(RELATIONSHIP_KINDS),
   })
   .superRefine((item, ctx) => {
     if ([item.fromEntityId, item.fromName].filter(Boolean).length !== 1) {
@@ -297,7 +299,7 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('add_identity_facet'),
     entityId: z.string().regex(UUID_RE),
-    facetKind: z.enum(['email', 'phone', 'telegram', 'slack', 'github', 'timeline_user', 'other']),
+    facetKind: z.enum(IDENTITY_FACET_KINDS),
     value: z.string().trim().min(1).max(300),
     normalizedValue: z.string().trim().min(1).max(300).optional(),
     provider: z.string().trim().min(1).max(80).nullable().optional(),
@@ -359,7 +361,7 @@ const getTimelineMomentInput = z.object({
 });
 
 const searchDocumentsInput = z.object({
-  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
+  ranking: z.enum(RETRIEVAL_RANKING_MODES).optional(),
   query: z.string().trim().min(1).max(500),
   documentId: z.string().regex(UUID_RE).optional(),
   folderIds: z.array(z.string().regex(UUID_RE)).max(20).optional(),
@@ -401,7 +403,7 @@ const searchObjectsStructuredInput = z.object({
 const searchBoardsInput = z.object({
   query: z.string().trim().max(300).optional(),
   boardId: z.string().regex(UUID_RE).optional(),
-  templateKind: z.enum(['pipeline', 'task_board', 'catalog', 'custom']).optional(),
+  templateKind: z.enum(BOARD_TEMPLATE_KINDS).optional(),
   pinned: z.boolean().optional(),
   objectId: z.string().regex(UUID_RE).optional(),
   laneId: z.string().regex(UUID_RE).optional(),
@@ -518,9 +520,9 @@ const executeBoardRemoveItemInput = z.object({
   reason: z.string().trim().min(1).max(1000),
 });
 
-const calendarVisibilitySchema = z.enum(['team', 'private', 'specific_users']);
-const calendarShowAsSchema = z.enum(['busy', 'free', 'tentative']);
-const recurrenceEditModeSchema = z.enum(['single', 'series', 'this_and_future']);
+const calendarVisibilitySchema = z.enum(EVENT_VISIBILITIES);
+const calendarShowAsSchema = z.enum(CALENDAR_AVAILABILITIES);
+const recurrenceEditModeSchema = z.enum(RECURRENCE_EDIT_SCOPES);
 
 const executeCalendarCreateInput = z.object({
   title: z.string().trim().min(1).max(200),
@@ -942,8 +944,7 @@ export async function buildMcpTools(
           const capture = await recordMcpToolResultEvidence({
             db,
             teamId: scope.teamId,
-            actorUserId:
-              scope.userId === '00000000-0000-0000-0000-000000000000' ? null : scope.userId,
+            actorUserId: scope.userId === NIL_UUID ? null : scope.userId,
             visibility: t.serverUserId ? 'private' : 'team',
             visibilityOwnerUserId: t.serverUserId,
             serverId: t.serverId,
@@ -953,9 +954,7 @@ export async function buildMcpTools(
             args: (args ?? {}) as Record<string, unknown>,
             result,
             ...(options.invocationSurface ? { invocationSurface: options.invocationSurface } : {}),
-            ...(scope.userId === '00000000-0000-0000-0000-000000000000'
-              ? { syntheticActorKind: 'team_agent' as const }
-              : {}),
+            ...(scope.userId === NIL_UUID ? { syntheticActorKind: 'team_agent' as const } : {}),
             ...(options.mcpOutboundKeyId ? { mcpOutboundKeyId: options.mcpOutboundKeyId } : {}),
           }).catch((err: unknown) => {
             const safeError = options.sanitizeError?.(err) ?? err;
@@ -3141,27 +3140,11 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
     search_integration_events: capabilityTool({
       capability: 'read',
       description:
-        'Semantic search restricted to events synced from connected integrations (Google Drive activity, Linear issue changes, GitHub PR/issue/release events, Monday.com board updates, Slack workspace history, and Sentry issues/releases). Returns event_ids you can cite as [ev:<id>]. Use when the user asks about something that happened in an external system.',
-      inputSchema: z
-        .object({
-          query: z.string().trim().min(1).max(500),
-          provider: z
-            .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry'])
-            .optional(),
-          limit: z.number().int().min(1).max(20).optional(),
-        })
-        .strict(),
+        'Search events synced from connected native integrations, including repository activity and deal-stage changes. Returns event_ids you can cite as [ev:<id>]. Use when the user asks about something that happened in an external system.',
+      inputSchema: searchIntegrationEventsInput.strict(),
       execute: async (raw) =>
         runSafe('search_integration_events', async () => {
-          const parsed = z
-            .object({
-              query: z.string().trim().min(1).max(500),
-              provider: z
-                .enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry'])
-                .optional(),
-              limit: z.number().int().min(1).max(20).optional(),
-            })
-            .parse(raw);
+          const parsed = searchIntegrationEventsInput.parse(raw);
           const requestedLimit = parsed.limit ?? 10;
           const selectedBoardIds = new Set<string>();
           const selectedDocIds = new Set<string>();
@@ -3231,22 +3214,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       capability: 'read',
       description:
         "Look up the current state of an external object that was synced from a connected integration. Returns the workspace entity (when one exists) plus the most recent integration_event history. Use when the user names a specific external object (e.g. 'ENG-42', 'acme/repo#7', 'Drive file ...') and you want the latest status before answering.",
-      inputSchema: z
-        .object({
-          provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']),
-          externalObjectId: z.string().min(1).max(512),
-          historyLimit: z.number().int().min(1).max(50).optional(),
-        })
-        .strict(),
+      inputSchema: getIntegrationResourceInput.strict(),
       execute: async (raw) =>
         runSafe('get_integration_resource', async () => {
-          const parsed = z
-            .object({
-              provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']),
-              externalObjectId: z.string().min(1).max(512),
-              historyLimit: z.number().int().min(1).max(50).optional(),
-            })
-            .parse(raw);
+          const parsed = getIntegrationResourceInput.parse(raw);
           const args: Parameters<typeof scope.integrations.getIntegrationResource>[0] = {
             provider: parsed.provider,
             externalObjectId: parsed.externalObjectId,
@@ -3669,7 +3640,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         allDay: z.boolean().optional(),
         description: z.string().trim().max(1000).optional(),
         location: z.string().trim().max(500).optional(),
-        showAs: z.enum(['busy', 'free', 'tentative']).optional(),
+        showAs: z.enum(CALENDAR_AVAILABILITIES).optional(),
         rrule: z.string().trim().max(2000).optional(),
         visibility: z.enum(['team', 'private']).optional(),
         reminderMinutes: z.number().int().min(0).max(1440).optional(),
@@ -3696,7 +3667,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               allDay: z.boolean().optional(),
               description: z.string().trim().max(1000).optional(),
               location: z.string().trim().max(500).optional(),
-              showAs: z.enum(['busy', 'free', 'tentative']).optional(),
+              showAs: z.enum(CALENDAR_AVAILABILITIES).optional(),
               rrule: z.string().trim().max(2000).optional(),
               visibility: z.enum(['team', 'private']).optional(),
               reminderMinutes: z.number().int().min(0).max(1440).optional(),
@@ -3803,9 +3774,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             timezone: z.string().max(100).optional(),
             allDay: z.boolean().optional(),
             location: z.string().trim().max(500).nullable().optional(),
-            showAs: z.enum(['busy', 'free', 'tentative']).optional(),
+            showAs: z.enum(CALENDAR_AVAILABILITIES).optional(),
             rrule: z.string().trim().max(2000).nullable().optional(),
-            recurrenceEditMode: z.enum(['single', 'series', 'this_and_future']).optional(),
+            recurrenceEditMode: z.enum(RECURRENCE_EDIT_SCOPES).optional(),
             visibility: z.enum(['team', 'private']).optional(),
             reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
             proposalGroupId: z.string().trim().max(120).optional(),

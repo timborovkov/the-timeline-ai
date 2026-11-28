@@ -1,5 +1,6 @@
 'use server';
 
+import { isFullMemberRole } from '@timeline/db/contracts/workspace-access';
 import { updateSettingsSchema } from '@timeline/shared/messaging/format';
 import { withTeam } from '@timeline/shared/team-scope';
 import { redirect } from 'next/navigation';
@@ -33,7 +34,7 @@ export async function saveUpdateAction(
   const scope = withTeam(db, active.teamId, session.user.id);
   try {
     const role = await scope.requireMembership();
-    if (!['owner', 'admin', 'member'].includes(role))
+    if (!isFullMemberRole(role))
       return { error: 'Update schedules require full workspace membership.' };
     if ((intent === 'delete' || intent === 'reset') && !workspace) {
       await scope.updates.remove(key, intent === 'reset');

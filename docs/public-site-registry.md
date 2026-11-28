@@ -76,7 +76,7 @@ Set a claim's `reviewedOn` when checking that claim independently. The
 comparison page and expanded LLM entry show the same check date.
 Notion remains integrations-only.
 The Integrations header link opens the directory. The footer retains native and
-capture destinations. Slack and Telegram retain dedicated pages. Notion is a live-lookup example. Jira and the planned CRM pages follow the
+capture destinations, including native HubSpot pipeline sync. Slack and Telegram retain dedicated pages. Notion is a live-lookup example. Jira and the planned CRM pages follow the
 planned-page discovery policy below. The Features hub is registered with the
 public product pages. The integration directory's capability table and both LLM files share the same answers for
 native sync, deliberate capture, live lookup, historical coverage, and

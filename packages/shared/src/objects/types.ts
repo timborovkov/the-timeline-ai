@@ -1,3 +1,6 @@
+import type { IdentityFacetKind } from '@timeline/db/contracts/object-kinds';
+
+import type { ImportSource } from '#src/integrations/import-sources.js';
 import type {
   TaskCategory,
   TaskCategoryMode,
@@ -65,6 +68,7 @@ export interface ObjectSearchFilter extends Omit<ObjectListFilter, 'cursor' | 'o
 }
 
 export interface ObjectRow {
+  statusSource?: ImportSource | 'locked';
   id: string;
   type: ObjectType;
   canonicalName: string;
@@ -222,7 +226,7 @@ export interface ObjectDetail extends ObjectRow {
   identityFacets: {
     id: string;
     entityId: string;
-    kind: 'email' | 'phone' | 'telegram' | 'slack' | 'github' | 'timeline_user' | 'other';
+    kind: IdentityFacetKind;
     value: string;
     normalizedValue: string;
     provider: string | null;

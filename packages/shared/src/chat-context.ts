@@ -1,3 +1,5 @@
+import { UUID_RE, isUuidV1ToV5 as isUuid } from '#src/identifiers.js';
+import { MOMENT_ID_RE } from '#src/timeline-moments/identifiers.js';
 import {
   SAVED_WORK_VIEW_FILTER_VALUE_MAX,
   savedWorkViewFilterKeys,
@@ -37,18 +39,11 @@ export interface ChatContextRef {
   meetingId?: string;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const MOMENT_ID_RE = /^moment:[a-z0-9:._/-]{1,180}$/i;
 const SAVED_WORK_VIEW_HREF =
   /^(\/app\/(?:(tasks|objects|approvals)|boards\/([0-9a-fA-F-]+)))(?:\?([^#\s]*))?$/;
-const SAVED_WORK_VIEW_BOARD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function isUuid(value: string | undefined): value is string {
-  return typeof value === 'string' && UUID_RE.test(value);
-}
 
 function optionalUuid(value: unknown): string | undefined {
-  return typeof value === 'string' && isUuid(value) ? value : undefined;
+  return isUuid(value) ? value : undefined;
 }
 
 function optionalMomentId(value: unknown): string | undefined {
@@ -61,7 +56,7 @@ function clip(value: string, max: number): string {
 
 function matchSavedWorkViewHref(href: string) {
   const match = SAVED_WORK_VIEW_HREF.exec(href);
-  if (!match || (match[3] !== undefined && !SAVED_WORK_VIEW_BOARD_ID.test(match[3]))) return null;
+  if (!match || (match[3] !== undefined && !UUID_RE.test(match[3]))) return null;
   return match;
 }
 

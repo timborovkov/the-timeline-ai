@@ -1,3 +1,5 @@
+import { BOARD_LANE_KINDS, BOARD_TEMPLATE_KINDS } from '@timeline/db/contracts/board-kinds';
+import { RELATIONSHIP_KINDS } from '@timeline/db/contracts/object-kinds';
 import { z } from 'zod';
 
 import { fenceExternalContent } from '#src/agent/external-content.js';
@@ -20,7 +22,7 @@ const reason = z.string().trim().min(1).max(1000);
 const lane = z.object({
   id: id.optional(),
   name: z.string().trim().min(1).max(120),
-  kind: z.enum(['active', 'done', 'terminal', 'lost', 'blocked']).nullable().optional(),
+  kind: z.enum(BOARD_LANE_KINDS).nullable().optional(),
 });
 const settings = z.object({
   name: z.string().trim().min(1).max(120),
@@ -35,7 +37,7 @@ const noteState = z.object({ entityId: id, body: z.string(), updatedAt: revision
 const relationship = z.object({
   fromEntityId: id,
   toEntityId: id,
-  kind: z.enum(['parent', 'child', 'related', 'blocks', 'blocked_by', 'duplicate_of']),
+  kind: z.enum(RELATIONSHIP_KINDS),
 });
 
 function boardLanes(lanes: z.output<typeof lane>[]): BoardLaneInput[] {
@@ -139,7 +141,7 @@ export function buildWorkspaceTools(
       z.object({
         name: settings.shape.name,
         purpose: settings.shape.purpose.optional(),
-        templateKind: z.enum(['pipeline', 'task_board', 'catalog', 'custom']),
+        templateKind: z.enum(BOARD_TEMPLATE_KINDS),
         lanes: settings.shape.lanes.optional(),
         qualificationEnabled: z.boolean().optional(),
         qualificationInstructions: settings.shape.qualificationInstructions.optional(),

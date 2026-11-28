@@ -16,6 +16,8 @@ import {
   agentSuggestions,
   artifactClusters,
   artifactEvidenceAssociations,
+  boardImportLinks,
+  boardImportRules,
   boardLanes,
   boardItemChanges,
   boardItems,
@@ -86,10 +88,13 @@ import {
   pinnedObjectIdFromContext,
 } from '#src/chat-context.js';
 import { resetSurfaceSessionByIdInTransaction } from '#src/conversation-surfaces/scope.js';
+import { uniqueChatTitle } from '#src/conversation-surfaces/titles.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { documentSummarySourcesAreCurrent } from '#src/documents/visibility.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { getEnv } from '#src/env.js';
+import { UUID_RE } from '#src/identifiers.js';
+import { lockBoardImports, taskStatusSources } from '#src/integrations/import-sources.js';
 import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
@@ -1121,7 +1126,6 @@ async function deleteMergedObjectEmbeddingPoints(teamId: string, entityId: strin
   }
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const RELATIONSHIP_KINDS = relationshipKind.enumValues;
 export type RelationshipKind = (typeof RELATIONSHIP_KINDS)[number];
 
@@ -1492,7 +1496,7 @@ export async function listObjects(
   scope: TeamScopeCore,
   filter: ObjectListFilter = {},
 ): Promise<ObjectRow[]> {
-  await scope.requireMembership();
+  const role = await scope.requireMembership();
   const conds = objectListConditions(scope, filter);
 
   const cursorSql = cursorCondition(filter.cursor, entities.updatedAt, entities.id);
@@ -1508,7 +1512,19 @@ export async function listObjects(
     .orderBy(...objectListOrder(filter))
     .limit(limit)
     .offset(offset);
-  return attachCommentCounts(db, scope, rows.map(toObjectRow));
+  const objects = rows.map(toObjectRow);
+  const statusSources = await taskStatusSources(
+    db,
+    scope.teamId,
+    scope.userId,
+    role,
+    objects.filter((o) => o.type === 'task').map((o) => o.id),
+  );
+  for (const object of objects) {
+    const source = statusSources.get(object.id);
+    if (source) object.statusSource = source;
+  }
+  return attachCommentCounts(db, scope, objects);
 }
 
 export async function listObjectsLinkedToIntegration(
@@ -3720,6 +3736,17 @@ export async function getObject(
   const commentCount = commentCountRows[0]?.count ?? notes.length;
 
   const base = toObjectRow(entityRow);
+  if (base.type === 'task') {
+    const statusSources = await taskStatusSources(
+      db,
+      scope.teamId,
+      scope.userId,
+      await scope.requireMembership(),
+      [base.id],
+    );
+    const source = statusSources.get(base.id);
+    if (source) base.statusSource = source;
+  }
   const connectedWork = await getConnectedWork(db, scope, base);
   const provenance = await getObjectProvenance(db, scope, base, connectedWork);
   const relationships = [
@@ -5467,6 +5494,7 @@ export async function mergeObjects(
   if (ids.length > 10) throw new Error('Merge at most 10 objects at once');
 
   const result = await db.transaction(async (tx) => {
+    await lockBoardImports(tx, scope.teamId);
     const rows = await tx
       .select()
       .from(entities)
@@ -5489,6 +5517,32 @@ export async function mergeObjects(
       .filter((row): row is ObjectRow => row !== undefined);
     const loserIds = losers.map((row) => row.id);
     const nextAliases = mergeAliases(survivor, losers);
+
+    const syncLinks = await tx
+      .select({
+        entityId: boardImportLinks.entityId,
+        itemId: boardImportLinks.itemId,
+        state: boardImportLinks.state,
+        field: boardImportLinks.field,
+      })
+      .from(boardImportLinks)
+      .where(
+        and(
+          eq(boardImportLinks.teamId, scope.teamId),
+          inArray(boardImportLinks.entityId, ids),
+          inArray(boardImportLinks.state, ['active', 'paused']),
+        ),
+      );
+    if (syncLinks.some((link) => objectsById.get(link.entityId)?.type !== survivor.type)) {
+      throw new Error(
+        'Choose a survivor of the synced object’s type or stop syncing before merging.',
+      );
+    }
+    const ownedLanes = new Set(
+      syncLinks.flatMap((link) =>
+        link.state === 'active' && link.field === 'lane' && link.itemId ? [link.itemId] : [],
+      ),
+    );
 
     const relationships = await tx
       .select()
@@ -5662,7 +5716,24 @@ export async function mergeObjects(
           ),
         )
         .limit(1);
-      if (duplicateActive[0]) {
+      const keeper = duplicateActive[0];
+      if (keeper) {
+        if (ownedLanes.has(item.id)) {
+          if (ownedLanes.has(keeper.id)) {
+            throw new Error('Both cards have a synced lane. Stop syncing one before merging.');
+          }
+          await tx
+            .update(boardItems)
+            .set({ laneId: item.laneId, updatedAt: now })
+            .where(and(eq(boardItems.teamId, scope.teamId), eq(boardItems.id, keeper.id)));
+          ownedLanes.add(keeper.id);
+        }
+        await tx
+          .update(boardImportLinks)
+          .set({ itemId: keeper.id })
+          .where(
+            and(eq(boardImportLinks.teamId, scope.teamId), eq(boardImportLinks.itemId, item.id)),
+          );
         const updatedItem = { ...item, entityId: survivor.id, archivedAt: now, updatedAt: now };
         await tx
           .update(boardItems)
@@ -5685,6 +5756,26 @@ export async function mergeObjects(
           await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board),
         );
       }
+    }
+    await tx
+      .update(boardImportLinks)
+      .set({ entityId: survivor.id })
+      .where(
+        and(
+          eq(boardImportLinks.teamId, scope.teamId),
+          inArray(boardImportLinks.entityId, loserIds),
+        ),
+      );
+    if (survivor.type === 'project') {
+      await tx
+        .update(boardImportRules)
+        .set({ projectId: survivor.id })
+        .where(
+          and(
+            eq(boardImportRules.teamId, scope.teamId),
+            inArray(boardImportRules.projectId, loserIds),
+          ),
+        );
     }
     await tx
       .update(boardItemChanges)
@@ -8413,28 +8504,6 @@ export interface ChatMessageRow {
   createdAt: Date;
 }
 
-const CHAT_TITLE_MAX_LENGTH = 48;
-
-function normalizeStoredChatTitle(title: string): string {
-  const compact = title.replace(/\s+/g, ' ').trim();
-  return (compact || 'New chat').slice(0, CHAT_TITLE_MAX_LENGTH).trim() || 'New chat';
-}
-
-function dedupeStoredChatTitle(title: string, existingTitles: string[]): string {
-  const baseTitle = normalizeStoredChatTitle(title);
-  const seen = new Set(existingTitles.map((value) => value.toLowerCase()));
-  if (!seen.has(baseTitle.toLowerCase())) return baseTitle;
-  for (let n = 2; n < 100; n += 1) {
-    const suffix = ` ${n}`;
-    const base = baseTitle.slice(0, CHAT_TITLE_MAX_LENGTH - suffix.length).trim();
-    const candidate = `${base}${suffix}`;
-    if (!seen.has(candidate.toLowerCase())) return candidate;
-  }
-  return `${baseTitle.slice(0, CHAT_TITLE_MAX_LENGTH - 4).trim()} ${Date.now()
-    .toString()
-    .slice(-3)}`;
-}
-
 export async function hasCompletedChatAnswer(db: Db, scope: TeamScopeCore): Promise<boolean> {
   await scope.requireMembership();
   const rows = await db
@@ -8742,7 +8811,7 @@ export async function setUniqueChatSessionTitle(
           isNotNull(chatSessions.title),
         ),
       );
-    const uniqueTitle = dedupeStoredChatTitle(
+    const uniqueTitle = uniqueChatTitle(
       title,
       existingRows.map((row) => row.title).filter((value): value is string => value !== null),
     );

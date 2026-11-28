@@ -26,7 +26,9 @@ const {
   artifactClusters,
   artifactEvidenceAssociations,
   billingUsageLedger,
+  boardImportEffects,
   entities,
+  entityRelationships,
   factEntities,
   facts,
   integrations,
@@ -84,6 +86,476 @@ describe('writeIntegrationEvents visibility', () => {
 
   afterEach(async () => {
     await pg.close();
+  });
+
+  it('keeps HubSpot deals synced through merges and releases the surviving lane on unlink', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'hubspot',
+        externalAccountId: '55',
+        displayName: 'CRM',
+      })
+      .returning();
+    if (!integration) throw new Error('Missing test integration');
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const other = withTeam(db as never, TEAM_ID, USER_B_ID);
+    const boardId = '22222222-1111-4111-8111-222222222222',
+      lane1 = '33333333-1111-4111-8111-222222222222',
+      lane2 = '33333333-1111-4111-8111-333333333333';
+    await pg.exec(`insert into integration_selections(integration_id,selection_kind,external_id) values ('${integration.id}','hubspot.pipeline','sales');
+    insert into boards(id,team_id,name) values ('${boardId}','${TEAM_ID}','Sales');
+    insert into board_lanes(id,team_id,board_id,name,position) values ('${lane1}','${TEAM_ID}','${boardId}','Open',0),('${lane2}','${TEAM_ID}','${boardId}','Won',1);
+    insert into entities(team_id,type,canonical_name) values ('${TEAM_ID}','company','Example Co');`);
+    const config = {
+      integrationId: integration.id,
+      boardId,
+      resource: 'sales',
+      projectId: null,
+      issues: false,
+      merges: false,
+      history: false,
+      stageLanes: { one: lane1, two: lane2 },
+    };
+    const event = (stage: string, serial: number, dealId = '1') => ({
+      provider: 'hubspot',
+      eventType: 'deal.updated',
+      signalClass: 'captured_work' as const,
+      eventClass: 'work_record' as const,
+      occurredAt: new Date(1790000000000 + serial),
+      dedupKey: `hubspot:55:deal:${dealId}:${serial}`,
+      externalObjectId: '55:deal:' + dealId,
+      contentText: 'Example renewal',
+      extra: {
+        hubspot: {
+          id: dealId,
+          title: 'Example renewal ' + dealId,
+          active: true,
+          pipeline_id: 'sales',
+          stage_id: stage,
+          stage_label: stage,
+          companies: [{ id: '3', name: 'Example Co' }],
+        },
+      },
+    });
+    const write = (stage: string, serial: number, dealId = '1') =>
+      writeIntegrationEvents({
+        db: db as never,
+        integration,
+        events: [event(stage, serial, dealId)],
+      });
+    await write('one', 1);
+    await expect(other.boardImports.preview(config)).rejects.toThrow();
+    const preview = await scope.boardImports.preview(config);
+    const company = preview.rows.find((r) => r.kind === 'company')?.candidates[0];
+    if (!company) throw new Error('Expected existing company in preview');
+    await scope.boardImports.confirm(config, preview.revision, { 'company:3': company.id });
+    await scope.objects.updateObject(
+      company.id,
+      { canonicalName: 'Example Company' },
+      { kind: 'user', userId: USER_ID },
+    );
+    const secondCompany = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'New partner',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const changedDeal = event('two', 2);
+    changedDeal.extra.hubspot.companies.push({ id: '4', name: secondCompany.canonicalName });
+    const [stageEventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [changedDeal],
+    });
+    if (!stageEventId) throw new Error('Expected the deal stage event');
+    await write('one', 1);
+    await write('one', 0);
+    let board = await scope.boards.getBoard(boardId);
+    expect(board?.items).toHaveLength(1);
+    expect(board?.items[0]?.laneId).toBe(lane2);
+    expect(await db.select().from(entities)).toHaveLength(3);
+    const item = board?.items[0];
+    if (!item) throw new Error('Expected imported deal card');
+    const lookup = (externalObjectId: string) =>
+      scope.integrations.getIntegrationResource({ provider: 'hubspot', externalObjectId });
+    expect((await lookup('55:deal:1'))?.entity?.id).toBe(item.entityId);
+    expect((await lookup('55:company:3'))?.entity?.id).toBe(company.id);
+    expect(await lookup('99:deal:1')).toBeNull();
+    expect(await lookup('55:company:4')).toBeNull();
+    const dealEffect = async () =>
+      (
+        await db
+          .select()
+          .from(boardImportEffects)
+          .where(eq(boardImportEffects.sourceEventId, stageEventId))
+      ).find((effect) => effect.recordKey === 'deal:1');
+    const partnerRelationships = () =>
+      db
+        .select()
+        .from(entityRelationships)
+        .where(eq(entityRelationships.kind, 'related'))
+        .then((rows) =>
+          rows.filter(
+            (row) =>
+              [row.fromEntityId, row.toEntityId].includes(secondCompany.id) &&
+              [row.fromEntityId, row.toEntityId].includes(item.entityId),
+          ),
+        );
+    expect(await dealEffect()).toMatchObject({ state: 'waiting', waitingOn: ['company:4'] });
+    expect(await partnerRelationships()).toHaveLength(0);
+    const matchPreview = await scope.boardImports.preview(config);
+    expect(matchPreview.rows.find((row) => row.key === 'company:4')?.action).toBe(
+      'Review possible matches',
+    );
+    await scope.boardImports.confirm(config, matchPreview.revision, {
+      'company:4': secondCompany.id,
+    });
+    expect(await partnerRelationships()).toHaveLength(1);
+    expect(await dealEffect()).toMatchObject({ state: 'applied', waitingOn: [] });
+    await expect(
+      scope.boards.updateBoardItem(item.id, { laneId: lane1 }, { kind: 'user', userId: USER_ID }),
+    ).rejects.toThrow();
+    const exitEvent = {
+      ...event('two', 3),
+      eventType: 'deal.left_pipeline',
+      extra: { hubspot: { id: '1', pipeline_id: 'sales', active: false } },
+    };
+    await writeIntegrationEvents({ db: db as never, integration, events: [exitEvent] });
+    expect((await scope.boardImports.ownership({ itemId: item.id }))[0]?.state).toBe('paused');
+    await scope.boards.updateBoardItem(
+      item.id,
+      { laneId: lane1 },
+      { kind: 'user', userId: USER_ID },
+    );
+    await write('two', 4);
+    expect((await scope.boards.getBoard(boardId))?.items[0]?.laneId).toBe(lane2);
+    const actor = { kind: 'user' as const, userId: USER_ID };
+    const survivor = await scope.objects.createObject({
+      type: 'deal',
+      canonicalName: 'Renewal',
+      actor,
+    });
+    const keeper = await scope.boards.addBoardItem(boardId, {
+      entityId: survivor.id,
+      laneId: lane1,
+      actor,
+    });
+    await scope.objects.mergeObjects({
+      survivorId: survivor.id,
+      mergedIds: [item.entityId],
+      actor,
+    });
+    expect((await scope.boards.getBoard(boardId))?.items).toMatchObject([
+      { id: keeper.id, laneId: lane2 },
+    ]);
+    await write('one', 5);
+    expect((await scope.boards.getBoard(boardId))?.items).toMatchObject([
+      { id: keeper.id, laneId: lane1 },
+    ]);
+    const [link] = await scope.boardImports.ownership({ itemId: keeper.id });
+    if (!link) throw new Error('Expected synced lane on the surviving card');
+    await write('one', 6, '2');
+    const competingDeal = (await scope.boards.getBoard(boardId))?.items.find(
+      (card) => card.entityId !== survivor.id,
+    );
+    if (!competingDeal) throw new Error('Expected a second synced deal');
+    await expect(
+      scope.objects.mergeObjects({
+        survivorId: survivor.id,
+        mergedIds: [competingDeal.entityId],
+        actor,
+      }),
+    ).rejects.toThrow('Both cards have a synced lane');
+    expect((await scope.boards.getBoard(boardId))?.items).toHaveLength(2);
+    expect((await lookup('55:deal:1'))?.entity?.id).toBe(survivor.id);
+    await scope.boardImports.unlink(link.id);
+    expect((await lookup('55:deal:1'))?.entity).toBeNull();
+    await scope.boards.updateBoardItem(keeper.id, { laneId: lane2 }, actor);
+    await write('one', 7);
+    board = await scope.boards.getBoard(boardId);
+    expect(board?.items.find((card) => card.id === keeper.id)?.laneId).toBe(lane2);
+  });
+
+  it('imports only confirmed Linear team issues, reuses issue IDs and releases status after unlink', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'linear',
+        externalAccountId: 'org',
+        displayName: 'Linear',
+      })
+      .returning();
+    if (!integration) throw new Error('Expected Linear connection');
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const boardId = '22222222-1111-4111-8111-222222222222';
+    const taskId = '33333333-1111-4111-8111-222222222222';
+    await pg.exec(`insert into integration_selections(integration_id,selection_kind,external_id) values ('${integration.id}','linear.team','engineering');
+      insert into boards(id,team_id,name,is_shared,created_by) values ('${boardId}','${TEAM_ID}','Work',true,'${USER_ID}');
+      insert into entities(id,team_id,type,canonical_name,status,metadata) values ('${taskId}','${TEAM_ID}','task','Original local title','todo','{"integration_provider":"linear","integration_external_id":"issue-A"}');`);
+    const { linearProvider } = await import('#src/integrations/providers/linear.js');
+    const handle = linearProvider.handleWebhook?.bind(linearProvider);
+    if (!handle) throw new Error('Expected Linear webhook handler');
+    const write = async (
+      data: Record<string, unknown>,
+      type = 'Issue',
+      visibility: 'team' | 'private' = 'team',
+      action = 'update',
+    ) => {
+      const result = await handle({
+        integration,
+        payload: { type, action, updatedFrom: { stateId: 'old' }, data },
+      });
+      const events = Array.isArray(result) ? result : result.events;
+      await writeIntegrationEvents({
+        db: db as never,
+        integration,
+        events: events.map((evt) => ({ ...evt, visibility })),
+      });
+    };
+    const issue = {
+      id: 'issue-A',
+      identifier: 'ENG-1',
+      title: 'New upstream title',
+      url: 'https://linear.app/example/issue/ENG-1',
+      team: { id: 'engineering', key: 'ENG', name: 'Engineering' },
+      state: { type: 'started', name: 'In Progress' },
+      updatedAt: '2026-06-01T10:00:00Z',
+    };
+    await write(issue);
+    await write({ ...issue, id: 'issue-B', identifier: 'ENG-2', title: 'New task' });
+    await write({ ...issue, id: 'issue-private', title: 'Private issue' }, 'Issue', 'private');
+    await write({ ...issue, id: 'issue-X', team: { id: 'sales', key: 'S', name: 'Sales' } });
+    await write(
+      {
+        id: 'comment',
+        body: 'Reviewed',
+        updatedAt: issue.updatedAt,
+        issue: { id: issue.id, identifier: issue.identifier, title: issue.title },
+      },
+      'Comment',
+    );
+    expect((await scope.boards.getBoard(boardId))?.items).toHaveLength(0);
+    const config = {
+      integrationId: integration.id,
+      resource: 'engineering',
+      boardId,
+      issues: true,
+      merges: false,
+      projectId: null,
+      history: false,
+      stageLanes: {},
+    };
+    const preview = await scope.boardImports.preview(config);
+    expect(preview.rows.map(({ key, action, target }) => ({ key, action, target }))).toEqual([
+      { key: 'issue:issue-A', action: 'Link to existing', target: taskId },
+      { key: 'issue:issue-B', action: 'Create', target: null },
+    ]);
+    expect((await scope.objects.getObject(taskId))?.status).toBe('todo');
+    await scope.boardImports.confirm(config, preview.revision, {});
+    expect((await scope.boards.getBoard(boardId))?.items).toHaveLength(2);
+    expect((await scope.objects.getObject(taskId))?.status).toBe('doing');
+    const latest = {
+      ...issue,
+      state: { type: 'completed', name: 'Done' },
+      updatedAt: '2026-06-02T10:00:00Z',
+    };
+    await write(latest);
+    await write(latest);
+    await write(issue);
+    expect((await scope.objects.getObject(taskId))?.status).toBe('done');
+    const [link] = await scope.boardImports.ownership({ entityId: taskId });
+    expect(link).toMatchObject({
+      provider: 'linear',
+      field: 'status',
+      url: issue.url,
+      state: 'active',
+    });
+    if (!link) throw new Error('Expected status link');
+    const moved = {
+      ...latest,
+      team: { id: 'sales', key: 'SAL', name: 'Sales' },
+      updatedAt: '2026-06-02T11:00:00Z',
+    };
+    await write(moved);
+    expect((await scope.objects.getObject(taskId))?.statusSource).toBeUndefined();
+    expect((await scope.boardImports.preview(config)).rows.map((r) => r.key)).not.toContain(
+      'issue:issue-A',
+    );
+    await write(issue);
+    expect((await scope.objects.getObject(taskId))?.statusSource).toBeUndefined();
+    await write({ ...latest, updatedAt: '2026-06-02T12:00:00Z' });
+    expect((await scope.objects.getObject(taskId))?.statusSource).toMatchObject({
+      provider: 'linear',
+    });
+    await write({ ...latest, updatedAt: '2026-06-02T13:00:00Z' }, 'Issue', 'team', 'remove');
+    expect((await scope.objects.getObject(taskId))?.statusSource).toBeUndefined();
+    await scope.boardImports.unlink(link.id);
+    await write({
+      ...latest,
+      state: { type: 'canceled', name: 'Cancelled' },
+      updatedAt: '2026-06-03T10:00:00Z',
+    });
+    expect((await scope.objects.getObject(taskId))?.status).toBe('done');
+    expect((await scope.objects.getObject(taskId))?.statusSource).toBeUndefined();
+  });
+
+  it('syncs GitHub issues and merged work and releases status when source visibility narrows', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        externalAccountId: '55',
+        displayName: 'GitHub',
+      })
+      .returning();
+    if (!integration) throw new Error('Missing test integration');
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const boardId = '22222222-1111-4111-8111-222222222222',
+      projectId = '33333333-1111-4111-8111-222222222222';
+    await pg.exec(`insert into integration_selections(integration_id,selection_kind,external_id) values ('${integration.id}','github.repo','example/app');
+      insert into boards(id,team_id,name,is_shared,created_by) values ('${boardId}','${TEAM_ID}','Work',false,'${USER_ID}');
+      insert into entities(id,team_id,type,canonical_name) values ('${projectId}','${TEAM_ID}','project','Application');
+      insert into entities(team_id,type,canonical_name) values ('${TEAM_ID}','task','Fix sync');`);
+    const config = {
+      integrationId: integration.id,
+      boardId,
+      resource: 'example/app',
+      projectId,
+      issues: true,
+      merges: true,
+      history: true,
+      stageLanes: {},
+    };
+    const write = (
+      n: number,
+      action: string,
+      serial: number,
+      closes: string[] = [],
+      visibility: 'team' | 'private' = 'team',
+    ) => {
+      const pr = action.startsWith('pr.'),
+        date = new Date(1790000000000 + serial);
+      return writeIntegrationEvents({
+        db: db as never,
+        integration,
+        events: [
+          {
+            provider: 'github',
+            eventType: action,
+            signalClass: 'captured_work',
+            eventClass: 'work_record',
+            visibility,
+            occurredAt: date,
+            dedupKey: `github:${n}:${serial}`,
+            externalObjectId: 'example/app#' + String(n),
+            contentText: n === 1 ? 'Fix sync' : 'Merged work ' + String(n),
+            extra: {
+              github: {
+                repo: 'example/app',
+                id: String(n),
+                number: n,
+                type: pr ? 'pull_request' : 'issue',
+                state: action === 'issue.reopened' ? 'open' : 'closed',
+                title: n === 1 ? 'Fix sync' : 'Merged work ' + String(n),
+                url: 'https://github.com/example/app/' + (pr ? 'pull/' : 'issues/') + String(n),
+                merged_at: action === 'pr.merged' ? date.toISOString() : null,
+                closing_issues: closes,
+                state_reason: action === 'issue.closed' && serial === 7 ? 'not_planned' : null,
+              },
+            },
+          },
+        ],
+      });
+    };
+    await write(1, 'issue.closed', 1);
+    await write(2, 'pr.merged', 2, ['issue:1']);
+    expect(
+      (await scope.boardImports.preview({ ...config, history: false })).rows.map((row) => row.key),
+    ).toEqual(['issue:1']);
+    const preview = await scope.boardImports.preview(config);
+    const task = preview.rows.find((r) => r.key === 'issue:1')?.candidates[0];
+    if (!task) throw new Error('Expected existing task in preview');
+    await scope.boardImports.confirm(config, preview.revision, { 'issue:1': task.id });
+    const member = withTeam(db as never, TEAM_ID, USER_B_ID);
+    expect((await member.objects.getObject(task.id))?.statusSource).toBe('locked');
+    expect(
+      (await member.objects.listObjects({ type: 'task' })).find((row) => row.id === task.id)
+        ?.statusSource,
+    ).toBe('locked');
+    expect(await member.boardImports.ownership({ entityId: task.id })).toEqual([]);
+    const issueLookup = { provider: 'github', externalObjectId: 'example/app#1' };
+    expect((await scope.integrations.getIntegrationResource(issueLookup))?.entity?.id).toBe(
+      task.id,
+    );
+    expect((await member.integrations.getIntegrationResource(issueLookup))?.entity).toBeNull();
+    await write(3, 'pr.merged', 3);
+    await write(3, 'pr.merged', 3);
+    await write(4, 'pr.closed', 4);
+    await write(5, 'pr.merged', 5, [], 'private');
+    expect((await scope.boards.getBoard(boardId))?.items).toHaveLength(2);
+    expect(
+      (await scope.boardImports.ownership({ entityId: task.id })).map((row) => row.field).sort(),
+    ).toEqual(['reference', 'status']);
+    expect((await scope.objects.getObject(task.id))?.status).toBe('done');
+    await write(1, 'issue.reopened', 6);
+    await write(1, 'issue.closed', 1);
+    expect((await scope.objects.getObject(task.id))?.status).toBe('todo');
+    await write(1, 'issue.closed', 7);
+    expect((await scope.objects.getObject(task.id))?.status).toBe('cancelled');
+    await write(9, 'pr.merged', 8, ['issue:8']);
+    expect((await scope.boards.getBoard(boardId))?.items).toHaveLength(2);
+    await write(8, 'issue.closed', 9);
+    const updated = await scope.boards.getBoard(boardId);
+    expect(updated?.items).toHaveLength(3);
+    const linkedIssue = updated?.items.find(
+      (item) => item.object.canonicalName === 'Merged work 8',
+    );
+    if (!linkedIssue) throw new Error('Expected task for the later issue');
+    expect(
+      (await scope.boardImports.ownership({ entityId: linkedIssue.entityId }))
+        .map((link) => link.field)
+        .sort(),
+    ).toEqual(['reference', 'status']);
+    const actor = { kind: 'user' as const, userId: USER_ID };
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Surviving project',
+      actor,
+    });
+    await scope.objects.mergeObjects({ survivorId: project.id, mergedIds: [projectId], actor });
+    const [eventId] = await write(1, 'issue.reopened', 10);
+    if (!eventId) throw new Error('Expected a source event for the reopened issue');
+    expect((await scope.objects.getObject(task.id))?.status).toBe('todo');
+    await scope.timeline.setEventVisibility(eventId, { visibility: 'private' });
+    expect((await member.objects.getObject(task.id))?.statusSource).toBeUndefined();
+    expect(
+      (await member.boardImports.ownership({ entityId: task.id })).some(
+        (link) => link.field === 'status',
+      ),
+    ).toBe(false);
+    await scope.objects.updateObject(task.id, { status: 'in_progress' }, actor);
+    await write(1, 'issue.closed', 11, [], 'private');
+    expect((await scope.objects.getObject(task.id))?.status).toBe('in_progress');
+    const [sharedEventId] = await write(1, 'issue.closed', 12);
+    expect((await scope.objects.getObject(task.id))?.status).toBe('done');
+    expect(
+      (await scope.boardImports.ownership({ entityId: task.id })).find(
+        (link) => link.field === 'status',
+      )?.state,
+    ).toBe('active');
+    if (!sharedEventId) throw new Error('Expected the team-visible close event');
+    await scope.timeline.setEventVisibility(sharedEventId, {
+      visibility: 'specific_users',
+      visibilityUserIds: [USER_B_ID],
+    });
+    await scope.objects.updateObject(task.id, { status: 'todo' }, actor);
+    expect((await scope.objects.getObject(task.id))?.status).toBe('todo');
   });
 
   it('does not write specific_users without user ids for per-event overrides', async () => {

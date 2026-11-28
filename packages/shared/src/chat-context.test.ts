@@ -7,6 +7,7 @@ import {
   chatContextPrompt,
   chatContextTrailEqual,
   contextIdsFromTrail,
+  isSavedWorkViewContextHref,
   mergeChatContextTrail,
   parseChatContextRef,
   parseChatContextTrail,
@@ -40,6 +41,14 @@ describe('chat context trail', () => {
     expect(parseChatContextRef({ ...objectA, href: 'https://evil.example/app' })).toBeNull();
     expect(parseChatContextRef({ ...objectA, label: '   ' })).toBeNull();
     expect(parseChatContextRef({ ...objectA, kind: 'secret' })).toBeNull();
+  });
+
+  it('accepts a nil board ID in a saved view URL and omits it from chat object references', () => {
+    const nilId = '00000000-0000-0000-0000-000000000000';
+    expect(isSavedWorkViewContextHref(`/app/boards/${nilId}`)).toBe(true);
+    expect(isSavedWorkViewContextHref('/app/boards/1234')).toBe(false);
+    expect(parseChatContextRef({ ...objectA, objectId: nilId })?.objectId).toBeUndefined();
+    expect(parseChatContextRef(objectA)?.objectId).toBe(objectA.objectId);
   });
 
   it('keeps the newest view first and does not drop earlier distinct views', () => {

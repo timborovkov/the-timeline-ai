@@ -7,10 +7,12 @@ import {
   teamBillingAccounts,
   users,
 } from '@timeline/db';
+import { FULL_MEMBER_ROLES, isFullMemberRole } from '@timeline/db/contracts/workspace-access';
 import { and, eq, inArray, isNull, getTableColumns } from 'drizzle-orm';
 
 import { withChatDeliveryPrincipal } from '#src/conversation-surfaces/deferred-delivery.js';
 import { getEnv } from '#src/env.js';
+import { NIL_UUID } from '#src/identifiers.js';
 import { claimDelivery, markDeliveryResult } from '#src/messaging/delivery-ledger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
 import {
@@ -90,7 +92,7 @@ export async function sendDailyDigest(input: {
         eq(teamMembers.teamId, digest.teamId),
         eq(teamMembers.userId, digest.userId),
         isNull(teamMembers.removedAt),
-        inArray(teamMembers.role, ['owner', 'admin', 'member']),
+        inArray(teamMembers.role, FULL_MEMBER_ROLES),
       ),
     )
     .limit(1);
@@ -194,7 +196,7 @@ export async function sendDailyDigest(input: {
       const role = await withTeam(input.db, digest.teamId, digest.userId)
         .requireMembership()
         .catch(() => null);
-      if (!role || !['owner', 'admin', 'member'].includes(role)) break;
+      if (!role || !isFullMemberRole(role)) break;
       const latestDestinations = await listTeamDigestDestinations(input.db, digest.teamId);
       const enabled = personalDigestDestinations(latestDestinations).some(
         (item) => item.id === destination.id,
@@ -263,7 +265,7 @@ export async function sendScheduledUpdate(input: {
   const scope = withTeam(db, teamId, userId);
   const role = await scope.requireMembership();
   const skipped = { ok: true, skipped: true, skippedStatus: 'skipped' } as const;
-  if (!['owner', 'admin', 'member'].includes(role)) return skipped;
+  if (!isFullMemberRole(role)) return skipped;
 
   const run = await scope.updates.findDeliveryRun(runId);
   if (!run || run.scheduleKey === HOME_UPDATE_KEY || run.status === 'skipped') return skipped;
@@ -366,7 +368,7 @@ export async function sendWorkspaceDailyDigest(input: {
   const generated = await generateDailyDigest({
     db: input.db,
     teamId: input.teamId,
-    userId: '00000000-0000-0000-0000-000000000000',
+    userId: NIL_UUID,
     windowStart: input.windowStart,
     windowEnd: input.windowEnd,
     audience: 'workspace',

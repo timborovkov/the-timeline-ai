@@ -4,7 +4,11 @@ import {
   type Db,
   accounts,
   auditLog,
+  boardImportLinks,
+  boardImportRules,
+  boards,
   connectionAttention,
+  connectionAttentionCategory,
   entities,
   integrationAuditLog,
   integrationProviderBudgets,
@@ -23,7 +27,9 @@ import {
   teams,
   users,
 } from '@timeline/db';
-import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import type { EventVisibility, TeamRole } from '@timeline/db/contracts/workspace-access';
+import { isBoardImportProvider, type NativeProviderId } from '@timeline/db/integration-providers';
+import { and, desc, eq, exists, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
@@ -57,6 +63,7 @@ import {
   isIntegrationHealthPauseKind,
   type IntegrationHealthPauseKind,
 } from '#src/integrations/health.js';
+import { readableImportSource } from '#src/integrations/import-sources.js';
 import { getProvider } from '#src/integrations/registry.js';
 import {
   loadIntegrationSelectionLinks,
@@ -119,12 +126,12 @@ export interface CreateIntegrationInput {
   providerConnectionId?: string | null;
   scopes?: string[];
   tokens?: Record<string, unknown>;
-  visibilityDefault?: 'team' | 'private' | 'specific_users';
+  visibilityDefault?: EventVisibility;
   visibilityDefaultUserIds?: string[] | null;
 }
 
 export interface UpsertProviderConnectionInput {
-  provider: Exclude<IntegrationProviderName, 'mcp'>;
+  provider: NativeProviderId;
   displayName: string;
   externalAccountId: string;
   scopes?: string[];
@@ -135,13 +142,7 @@ export interface ConnectionAttentionInput {
   providerConnectionId?: string | null;
   integrationId?: string | null;
   resourceShareId?: string | null;
-  category:
-    | 'needs_reconnect'
-    | 'needs_new_owner'
-    | 'access_changed'
-    | 'sync_error'
-    | 'webhook_degraded'
-    | 'access_revoked';
+  category: (typeof connectionAttentionCategory.enumValues)[number];
   summary: string;
 }
 
@@ -153,7 +154,7 @@ export interface ResolveConnectionAttentionInput {
 }
 
 export interface ProviderBudgetKey {
-  provider: Exclude<IntegrationProviderName, 'mcp'>;
+  provider: NativeProviderId;
   appKey: string;
   externalAccountId: string;
   scope: string;
@@ -167,8 +168,6 @@ export interface ResumeIntegrationHealthResult {
   firstFailedAt: Date | null;
   pausedAt: Date | null;
 }
-
-type NativeProviderName = Exclude<IntegrationProviderName, 'mcp'>;
 
 const transientSyncResourceType = 'integration.run';
 const healthResumeBackfillResourceType = 'health.resume_backfill';
@@ -285,14 +284,6 @@ const integrationHealthReset = {
   healthPauseKind: null,
   healthOwnerNotifiedAt: null,
 } as const;
-const connectionAttentionCategoryValues: ConnectionAttentionInput['category'][] = [
-  'needs_reconnect',
-  'needs_new_owner',
-  'access_changed',
-  'sync_error',
-  'webhook_degraded',
-  'access_revoked',
-];
 
 function webhookSubscriptionKey(subscription: {
   resourceKind: string;
@@ -351,7 +342,7 @@ export function createIntegrationScope(deps: {
   db: Db;
   teamId: string;
   userId: string;
-  ensureMember: (minRole?: 'member' | 'admin' | 'owner') => Promise<unknown>;
+  ensureMember: (minRole?: TeamRole) => Promise<unknown>;
   requireTeamMember?: (otherUserId: string) => Promise<void>;
 }) {
   const { db, teamId, userId, ensureMember } = deps;
@@ -690,7 +681,7 @@ export function createIntegrationScope(deps: {
               eq(connectionAttention.teamId, row.teamId),
               inArray(
                 connectionAttention.category,
-                connectionAttentionCategoryValues.filter(
+                connectionAttentionCategory.enumValues.filter(
                   (category) => category !== 'needs_new_owner',
                 ),
               ),
@@ -894,7 +885,7 @@ export function createIntegrationScope(deps: {
 
   async function setIntegrationVisibilityDefault(
     id: string,
-    visibilityDefault: 'team' | 'private' | 'specific_users',
+    visibilityDefault: EventVisibility,
     visibilityDefaultUserIds?: string[] | null,
   ): Promise<void> {
     await ensureMember('admin');
@@ -2232,6 +2223,42 @@ export function createIntegrationScope(deps: {
         ),
       )
       .limit(1);
+    let entity = ent[0] ?? null;
+    if (!entity && isBoardImportProvider(input.provider)) {
+      // Each HubSpot deal event also carries its companies. Match the account-qualified
+      // record key so those links can never resolve a deal lookup to its company.
+      const matches = await db
+        .select()
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            isNull(entities.mergedIntoId),
+            exists(
+              db
+                .select({ id: boardImportLinks.id })
+                .from(boardImportLinks)
+                .innerJoin(boardImportRules, eq(boardImportRules.id, boardImportLinks.ruleId))
+                .innerJoin(boards, eq(boards.id, boardImportRules.boardId))
+                .innerJoin(rawEvents, eq(rawEvents.id, boardImportLinks.sourceEventId))
+                .where(
+                  and(
+                    eq(boardImportLinks.entityId, entities.id),
+                    eq(boardImportLinks.teamId, teamId),
+                    eq(boardImportRules.provider, input.provider),
+                    inArray(boardImportLinks.state, ['active', 'paused']),
+                    readableImportSource(userId),
+                    input.provider === 'hubspot'
+                      ? sql`${boardImportRules.externalAccountId} || ':' || ${boardImportLinks.recordKey} = ${input.externalObjectId}`
+                      : sql`(${rawEvents.sourceMetadata} ->> 'external_object_id') = ${input.externalObjectId}`,
+                  ),
+                ),
+            ),
+          ),
+        )
+        .limit(2);
+      if (matches.length === 1) entity = matches[0] ?? null;
+    }
     const integrationVisibility = rawEventVisibleToUser(userId);
     const events = await db
       .select({
@@ -2253,8 +2280,8 @@ export function createIntegrationScope(deps: {
       )
       .orderBy(desc(rawEvents.occurredAt))
       .limit(input.historyLimit ?? 20);
-    if (ent.length === 0 && events.length === 0) return null;
-    return { entity: ent[0] ?? null, history: events };
+    if (!entity && events.length === 0) return null;
+    return { entity, history: events };
   }
 
   async function resumeIntegrationHealth(id: string): Promise<ResumeIntegrationHealthResult> {
@@ -2423,9 +2450,11 @@ function configuredBudgetAppKey(value: string | undefined): string | undefined {
   return trimmed;
 }
 
-export function providerBudgetAppKey(provider: NativeProviderName): string {
+export function providerBudgetAppKey(provider: NativeProviderId): string {
   const env = getEnv();
   switch (provider) {
+    case 'hubspot':
+      return configuredBudgetAppKey(env.HUBSPOT_CLIENT_ID) ?? 'hubspot';
     case 'github':
       return (
         configuredBudgetAppKey(env.GITHUB_APP_ID) ??
@@ -3453,7 +3482,7 @@ export async function adminRecordConnectionAttention(
   } else {
     await adminResolveConnectionAttention(db, teamId, {
       ...target,
-      categories: connectionAttentionCategoryValues.filter(
+      categories: connectionAttentionCategory.enumValues.filter(
         (category) => category !== input.category,
       ),
     });

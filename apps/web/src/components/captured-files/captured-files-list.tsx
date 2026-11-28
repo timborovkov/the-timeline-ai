@@ -1,5 +1,6 @@
 'use client';
 
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import { documentKindLabel, truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import { FileText, Image as ImageIcon, Link2, Paperclip, Upload } from 'lucide-react';
 import Link from 'next/link';
@@ -46,7 +47,7 @@ interface CapturedFileItem {
   id: string;
   name: string;
   metadata: Record<string, unknown>;
-  visibility: 'team' | 'private' | 'specific_users';
+  visibility: EventVisibility;
   visibilityUserIds: string[] | null;
   updatedAt: string;
   pinned: boolean;
@@ -90,7 +91,7 @@ interface Props {
   members: { id: string; label: string }[];
 }
 
-type Visibility = 'team' | 'private' | 'specific_users';
+type Visibility = EventVisibility;
 
 const ALL = 'all';
 

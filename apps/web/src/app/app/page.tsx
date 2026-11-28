@@ -1,4 +1,5 @@
 import { teams, users } from '@timeline/db';
+import { isFullMemberRole } from '@timeline/db/contracts/workspace-access';
 import {
   buildUpdateReport,
   HOME_UPDATE_KEY,
@@ -633,7 +634,7 @@ export default async function HomeDashboardPage() {
 
       <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="min-w-0 space-y-8">
-          {!impersonation && ['owner', 'admin', 'member'].includes(role) ? (
+          {!impersonation && isFullMemberRole(role) ? (
             <Suspense fallback={null}>
               <HomeDigest scope={scope} connections={connections} billing={billing} />
             </Suspense>

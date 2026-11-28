@@ -9,6 +9,7 @@ import {
 import { type ModelMessage } from 'ai';
 import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
+import { uniqueChatTitle } from '#src/conversation-surfaces/titles.js';
 import {
   DIRECT_CONVERSATION_HISTORY_CHARACTER_LIMIT,
   DIRECT_CONVERSATION_HISTORY_MESSAGE_LIMIT,
@@ -57,27 +58,7 @@ export interface CreateSurfaceTurnOptions {
   validateRoute?: (tx: ConversationDbTransaction) => Promise<boolean>;
 }
 
-const CHAT_TITLE_MAX_LENGTH = 48;
-
-function normalizeTitle(question: string): string {
-  const compact = question.replace(/\s+/g, ' ').trim();
-  return (compact || 'New chat').slice(0, CHAT_TITLE_MAX_LENGTH).trim() || 'New chat';
-}
-
-function dedupeTitle(title: string, existing: string[]): string {
-  const seen = new Set(existing.map((value) => value.toLowerCase()));
-  if (!seen.has(title.toLowerCase())) return title;
-  for (let suffix = 2; suffix < 100; suffix += 1) {
-    const marker = ` ${suffix}`;
-    const candidate = `${title.slice(0, CHAT_TITLE_MAX_LENGTH - marker.length).trim()}${marker}`;
-    if (!seen.has(candidate.toLowerCase())) return candidate;
-  }
-  return `${title.slice(0, CHAT_TITLE_MAX_LENGTH - 4).trim()} ${Date.now().toString().slice(-3)}`;
-}
-
-export function directConversationTitle(question: string): string {
-  return normalizeTitle(question);
-}
+export { normalizeChatTitle as directConversationTitle } from '#src/conversation-surfaces/titles.js';
 
 function scopedTurnWhere(scope: TeamScopeCore, turnId: string) {
   return and(
@@ -407,10 +388,7 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
       }
     }
 
-    const title = dedupeTitle(
-      directConversationTitle(firstQuestion),
-      await existingSessionTitles(tx, scope),
-    );
+    const title = uniqueChatTitle(firstQuestion, await existingSessionTitles(tx, scope));
     const sessions = await tx
       .insert(chatSessions)
       .values({

@@ -16,6 +16,12 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./integration-providers": {
+      "types": "./src/integration-providers.ts",
+      "development": "./src/integration-providers.ts",
+      "import": "./dist/integration-providers.js",
+      "default": "./dist/integration-providers.js"
+    },
     "./migrate": {
       "types": "./src/migrate.ts",
       "development": "./src/migrate.ts",
@@ -33,6 +39,12 @@
       "development": "./src/wait-for-migrations.ts",
       "import": "./dist/wait-for-migrations.js",
       "default": "./dist/wait-for-migrations.js"
+    },
+    "./contracts/*": {
+      "types": "./src/contracts/*.ts",
+      "development": "./src/contracts/*.ts",
+      "import": "./dist/contracts/*.js",
+      "default": "./dist/contracts/*.js"
     }
   },
   "main": "./dist/index.js",

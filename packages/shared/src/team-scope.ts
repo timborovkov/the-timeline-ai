@@ -8,6 +8,7 @@ import {
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
+  boardImportLinks,
   boardItems,
   calendarEvents,
   documentChunks,
@@ -15,7 +16,6 @@ import {
   documentVersions,
   entities,
   entityType,
-  eventSource,
   factEntities,
   facts as factsTable,
   objectIdentityFacets,
@@ -27,10 +27,11 @@ import {
   teamMembers,
   teamVisibilityDefaults,
   teams,
-  teamRole,
   users,
   visibilityDefaultSource,
 } from '@timeline/db';
+import type { EventSource } from '@timeline/db/contracts/event-sources';
+import type { EventVisibility, TeamRole } from '@timeline/db/contracts/workspace-access';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, notInArray, or, sql } from 'drizzle-orm';
 
 import { createAuditScope } from '#src/audit/scope.js';
@@ -50,12 +51,15 @@ import { createDocumentScope } from '#src/documents/scope.js';
 import { createEvaluationTracingScope } from '#src/evaluation-tracing/scope.js';
 import { createGuestAccessScope } from '#src/guest-access/scope.js';
 import { createHandoffScope } from '#src/handoffs.js';
+import { NIL_UUID, UUID_RE } from '#src/identifiers.js';
 import {
   acceptIngestWebhookEvidence,
   type AcceptIngestWebhookEvidenceInput,
   type AcceptIngestWebhookEvidenceResult,
 } from '#src/ingest-webhooks/accept.js';
 import { createIngestWebhookScope } from '#src/ingest-webhooks/scope.js';
+import { createBoardImportScope } from '#src/integrations/board-imports.js';
+import { lockBoardImports } from '#src/integrations/import-sources.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import type { chatStructured } from '#src/llm/chat.js';
@@ -125,29 +129,16 @@ import {
 import { obsoleteWebsiteEventIds } from '#src/websites/retrieval.js';
 import { createWebsiteScope } from '#src/websites/scope.js';
 
-// Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
-// the value import lets us derive the union type from the enum definition.
-const _roleValues = teamRole.enumValues;
-export type TeamRole = (typeof _roleValues)[number];
+export type { TeamRole };
 
-/** Re-exported so callers (e.g. agent tool schemas) and downstream types in
- *  this file share one source of truth with the Postgres enum. The
- *  intermediate const mirrors the `_roleValues` pattern above and pins the
- *  import as a runtime value (otherwise eslint's
- *  `consistent-type-imports` flags it). */
 const _entityTypeValues = entityType.enumValues;
 export type EntityType = (typeof _entityTypeValues)[number];
 
-// Source values pinned to the Drizzle enum so widening (Phase 9 added
-// 'document') only requires changing the schema. Output types use
-// `EventSource`; input types pin to the legacy narrow union because doc
-// activity goes through the documents scope, not generic createEvent().
-const _eventSourceValues = eventSource.enumValues;
-export type EventSource = (typeof _eventSourceValues)[number];
+export type { EventSource };
 export type CreatableEventSource = Exclude<EventSource, 'document'>;
 const _visibilityDefaultSourceValues = visibilityDefaultSource.enumValues;
 export type VisibilityDefaultSource = (typeof _visibilityDefaultSourceValues)[number];
-export type EventVisibility = 'private' | 'team' | 'specific_users';
+export type { EventVisibility };
 export type EmailEventVisibility = Exclude<EventVisibility, 'specific_users'>;
 
 const ROLE_RANK: Record<TeamRole, number> = { member: 0, admin: 1, owner: 2 };
@@ -288,17 +279,7 @@ export interface SearchEventsInput extends RankingInput {
   queryVector?: number[];
   from?: Date;
   to?: Date;
-  source?:
-    | 'web'
-    | 'telegram'
-    | 'email'
-    | 'system'
-    | 'integration'
-    | 'document'
-    | 'meeting'
-    | 'calendar'
-    | 'slack'
-    | 'ingest_webhook';
+  source?: EventSource;
   entityIds?: string[];
   /** Restrict semantic search to caller-authorized raw event ids. */
   eventIds?: string[];
@@ -539,8 +520,6 @@ export interface TeamScopeCore {
   postCommitEffects?: (() => void | Promise<void>)[];
   postCommitDb?: Db;
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Construct a query helper bound to a single (team, user) pair.
@@ -2109,9 +2088,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     boards: boardScope,
     calendar: calendarScope,
     recordMaintenanceWorker: Boolean(
-      deps.recordMaintenanceWorker &&
-      deps.skipMembershipCheck &&
-      userId === '00000000-0000-0000-0000-000000000000',
+      deps.recordMaintenanceWorker && deps.skipMembershipCheck && userId === NIL_UUID,
     ),
     ...(deps.chatStructured ? { chatStructured: deps.chatStructured } : {}),
     ...(deps.beforeSuggestionApply ? { beforeApplyItem: deps.beforeSuggestionApply } : {}),
@@ -2140,7 +2117,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     timeline: {
       /** Internal recovery metadata, never a user-visible event read. */
       async getEmailIngestRecoveryState(id: string) {
-        if (!deps.emailIngestRecovery || userId !== '00000000-0000-0000-0000-000000000000') {
+        if (!deps.emailIngestRecovery || userId !== NIL_UUID) {
           throw new Error('Email ingest recovery requires the system principal');
         }
         const [row] = await db
@@ -2248,6 +2225,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         }
 
         const updated = await db.transaction(async (tx) => {
+          const restrictImport = existing.source === 'integration' && input.visibility !== 'team';
+          if (restrictImport) await lockBoardImports(tx, teamId);
           const updatedRows = await tx
             .update(rawEvents)
             .set({
@@ -2263,6 +2242,19 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             .returning();
           const row = updatedRows[0];
           if (!row) return null;
+
+          if (restrictImport) {
+            await tx
+              .update(boardImportLinks)
+              .set({ state: 'paused' })
+              .where(
+                and(
+                  eq(boardImportLinks.teamId, teamId),
+                  eq(boardImportLinks.sourceEventId, id),
+                  eq(boardImportLinks.state, 'active'),
+                ),
+              );
+          }
 
           await tx.insert(auditLog).values({
             teamId,
@@ -3626,6 +3618,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     objects: objectScope,
     conversations: conversationSurfaceScope,
     boards: boardScope,
+    boardImports: createBoardImportScope(db, core),
     boardQualification: createBoardQualificationScope(
       db,
       core,

@@ -134,7 +134,7 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
       },
     ],
     timelineSide:
-      'The Timeline can hold people, company and deal records that come from the conversation record, with an evidence-linked review queue for proposals. Native capture from HubSpot, Attio and Pipedrive is unavailable. Timeline does not prospect, enrich leads, or record sales calls onto a CRM phone number.',
+      'The Timeline can hold people, company and deal records that come from the conversation record, with an evidence-linked review queue for proposals. A selected HubSpot pipeline can sync to a Timeline board. Native capture from Attio and Pipedrive is unavailable. Timeline does not prospect, enrich leads, or record sales calls onto a CRM phone number.',
     whenCompetitorBetter:
       "Choose Folk when you want an AI CRM for the sales motion: prospecting, enrichment, multi-channel outreach and calls recorded on Folk's own number. That is the product Folk publishes on folk.app.",
   },

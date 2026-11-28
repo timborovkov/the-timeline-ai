@@ -13,6 +13,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { DEFAULT_WORKSPACE_TIMEZONE } from '#src/contracts/workspace-time.js';
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
 
@@ -198,7 +199,7 @@ export const messagePreferences = pgTable(
       destination: 'app' | 'personal';
     }>(),
     dailyDigestHour: integer('daily_digest_hour').notNull().default(12),
-    timezone: text('timezone').notNull().default('Europe/Helsinki'),
+    timezone: text('timezone').notNull().default(DEFAULT_WORKSPACE_TIMEZONE),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

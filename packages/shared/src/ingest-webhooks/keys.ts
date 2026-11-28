@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 import { type Db, ingestWebhookCredentials, ingestWebhooks } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import { and, eq, isNull } from 'drizzle-orm';
 
 import { isTimelineEventClass, type TimelineEventClass } from '#src/event-class.js';
@@ -34,7 +35,7 @@ export interface ResolvedIngestWebhookCredential {
   credentialId: string;
   name: string;
   ownerUserId: string | null;
-  visibilityDefault: 'private' | 'team' | 'specific_users';
+  visibilityDefault: EventVisibility;
   eventClass: TimelineEventClass;
   proposalGenerationEnabled: boolean;
 }

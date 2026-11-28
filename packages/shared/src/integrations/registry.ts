@@ -1,6 +1,10 @@
+import { isNativeProviderId } from '@timeline/db/integration-providers';
+
 import { getEnv } from '#src/env.js';
+import { NATIVE_PROVIDER_LABELS } from '#src/integrations/provider-labels.js';
 import { githubProvider } from '#src/integrations/providers/github.js';
 import { googleDriveProvider } from '#src/integrations/providers/google-drive.js';
+import { hubspotProvider } from '#src/integrations/providers/hubspot.js';
 import { linearProvider } from '#src/integrations/providers/linear.js';
 import { mondayProvider } from '#src/integrations/providers/monday.js';
 import { sentryProvider } from '#src/integrations/providers/sentry.js';
@@ -40,13 +44,14 @@ const _registry: Record<NativeProviderId, IntegrationProvider> = {
   google_drive: googleDriveProvider,
   linear: linearProvider,
   github: githubProvider,
+  hubspot: hubspotProvider,
   monday: mondayProvider,
   slack: slackProvider,
   sentry: sentryProvider,
 };
 
 export function getProvider(id: string): IntegrationProvider {
-  if (!isRegistryProviderId(id)) throw new Error(`Unknown integration provider: ${id}`);
+  if (!isNativeProviderId(id)) throw new Error(`Unknown integration provider: ${id}`);
   const provider = _registry[id];
   const provisionWebhooks = provider.provisionWebhooks?.bind(provider);
   const deprovisionWebhook = provider.deprovisionWebhook?.bind(provider);
@@ -56,6 +61,7 @@ export function getProvider(id: string): IntegrationProvider {
     {
       google_drive: env.GOOGLE_CLIENT_ID,
       linear: env.LINEAR_CLIENT_ID,
+      hubspot: env.HUBSPOT_CLIENT_ID,
       github: env.GITHUB_APP_ID ?? env.GITHUB_APP_CLIENT_ID,
       monday: env.MONDAY_CLIENT_ID,
       slack: env.SLACK_CLIENT_ID,
@@ -125,10 +131,6 @@ export function getProvider(id: string): IntegrationProvider {
   };
 }
 
-function isRegistryProviderId(id: string): id is NativeProviderId {
-  return Object.hasOwn(_registry, id);
-}
-
 export function listRegisteredNativeProviderIds(): NativeProviderId[] {
   return (Object.keys(_registry) as NativeProviderId[]).sort();
 }
@@ -194,9 +196,9 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   // ─────────────────────── Native adapters ───────────────────────────
   {
     id: 'github',
-    label: 'GitHub',
+    label: NATIVE_PROVIDER_LABELS.github,
     description:
-      'Native repo sync: PRs, issues, reviews, merged commits, releases, and CI runs become cited events.',
+      'Capture repository activity. Import issues and track merged pull requests on a board.',
     logo: '/connectors/github.svg',
     category: 'dev-tools',
     kind: 'native',
@@ -211,9 +213,9 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   },
   {
     id: 'linear',
-    label: 'Linear',
+    label: NATIVE_PROVIDER_LABELS.linear,
     description:
-      'Issues, comments, status / assignee / priority changes, and projects sync as cited events and work-artifact evidence.',
+      'Import a Linear team’s issues into a board and keep task statuses in sync. Issues, comments, and projects also provide cited evidence.',
     logo: '/connectors/linear.svg',
     category: 'project-management',
     kind: 'native',
@@ -228,7 +230,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   },
   {
     id: 'google_drive',
-    label: 'Google Drive',
+    label: NATIVE_PROVIDER_LABELS.google_drive,
     description:
       'Selected Drive folders and files become cited timeline events after a quiet editing window. Timeline keeps the latest extracted text to detect changes, then deletes it on disconnect or file removal.',
     logo: '/connectors/google-drive.svg',
@@ -245,7 +247,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   },
   {
     id: 'monday',
-    label: 'Monday.com',
+    label: NATIVE_PROVIDER_LABELS.monday,
     description:
       'Native workspace sync: boards, records, subitems, updates, column activity, and WorkDocs become cited events.',
     logo: '/connectors/monday.svg',
@@ -262,7 +264,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   },
   {
     id: 'slack',
-    label: 'Slack',
+    label: NATIVE_PROVIDER_LABELS.slack,
     description:
       'Native workspace sync: selected channels, threads, files, reactions, and edits become cited events.',
     logo: '/connectors/slack.svg',
@@ -279,7 +281,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   },
   {
     id: 'sentry',
-    label: 'Sentry',
+    label: NATIVE_PROVIDER_LABELS.sentry,
     description:
       'Native issue sync: issue updates, resolved issues, and releases become cited events and incident evidence.',
     logo: '/connectors/sentry.svg',
@@ -379,21 +381,21 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     staticStatus: 'mcp_available',
   },
 
-  // ─────────────────────── Coming soon ───────────────────────────────
   {
     id: 'hubspot',
-    label: 'HubSpot',
-    description:
-      'Native company, contact, deal, ticket, note, and pipeline-event ingestion is planned.',
+    label: NATIVE_PROVIDER_LABELS.hubspot,
+    description: 'Capture deals, associated companies, and stage changes from selected pipelines.',
     logo: '/connectors/hubspot.svg',
     category: 'crm',
-    kind: 'mcp',
+    kind: 'native',
     featured: true,
-    connectablePath: '/app/connections/agent-tools',
-    ingestStatus: 'coming_soon',
-    examplePrompt: 'Which Q3 deals slipped to Q4?',
-    staticStatus: 'coming_soon',
+    connectablePath: '/app/connections/sources',
+    ingestStatus: 'implemented',
+    examplePrompt: 'Which deals moved through our sales pipeline?',
+    envCheck: () => Boolean(getEnv().HUBSPOT_CLIENT_ID && getEnv().HUBSPOT_CLIENT_SECRET),
   },
+
+  // ─────────────────────── Coming soon ───────────────────────────────
   {
     id: 'salesforce',
     label: 'Salesforce',
@@ -610,7 +612,7 @@ export function listFeaturedCatalog(): CatalogEntry[] {
  * this list with `available: false` so the UI can disclose them quietly.
  */
 export interface LegacyCatalogEntry {
-  id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
+  id: NativeProviderId;
   label: string;
   description: string;
   logo: string;

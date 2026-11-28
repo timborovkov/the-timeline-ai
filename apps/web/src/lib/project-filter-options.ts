@@ -1,6 +1,6 @@
+import { UUID_RE } from '@timeline/shared/identifiers';
 import type { ObjectListFilter, ObjectRow } from '@timeline/shared/objects/types';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PROJECT_PRELOAD_LIMIT = 200;
 
 type ListObjects = (filter: ObjectListFilter) => Promise<ObjectRow[]>;

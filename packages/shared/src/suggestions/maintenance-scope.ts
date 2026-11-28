@@ -22,6 +22,7 @@ import {
   tombstoneObjectDueDateCalendarEventsForEntities,
   dispatchDueDateCalendarEffects,
 } from '#src/calendar/due-dates.js';
+import { NIL_UUID } from '#src/identifiers.js';
 import { embed } from '#src/llm/embed.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { assertDevelopmentResetEnvironment } from '#src/suggestions/development-reset.js';
@@ -355,10 +356,10 @@ export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
             isNull(entities.mergedIntoId),
             archiveFilter,
             eq(entities.type, subject.type as typeof entities.$inferSelect.type),
-            sql`${entities.id} <> ${subject.id === 'candidate' ? '00000000-0000-0000-0000-000000000000' : subject.id}::uuid`,
+            sql`${entities.id} <> ${subject.id === 'candidate' ? NIL_UUID : subject.id}::uuid`,
             or(
               sql`${entities.metadata} ->> 'companyId' IS NOT NULL AND ${entities.metadata} ->> 'companyId' = ${typeof (subject.metadata as Record<string, unknown> | undefined)?.companyId === 'string' ? (subject.metadata as Record<string, string>).companyId : null}`,
-              sql`EXISTS (SELECT 1 FROM fact_entities a JOIN fact_entities b ON a.fact_id = b.fact_id WHERE a.entity_id = ${subject.id === 'candidate' ? '00000000-0000-0000-0000-000000000000' : subject.id}::uuid AND b.entity_id = ${entities.id})`,
+              sql`EXISTS (SELECT 1 FROM fact_entities a JOIN fact_entities b ON a.fact_id = b.fact_id WHERE a.entity_id = ${subject.id === 'candidate' ? NIL_UUID : subject.id}::uuid AND b.entity_id = ${entities.id})`,
             ),
           ),
         )

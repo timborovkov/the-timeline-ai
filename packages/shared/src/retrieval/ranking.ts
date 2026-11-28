@@ -1,5 +1,6 @@
+import type { RetrievalRankingMode as SearchRanking } from '#src/agent/retrieval-contract.js';
+
 /** Freshness is a small relevance signal, never a claim of source authority. */
-type SearchRanking = 'auto' | 'relevance' | 'balanced';
 export type EvidenceDateBasis = 'source' | 'observed' | 'uploaded' | 'unknown';
 export const FRESHNESS_CANDIDATE_LIMIT = 200;
 export interface RankingMetadata {

@@ -1,4 +1,5 @@
 import { VISION_BUDGET_DEFERRED } from '@timeline/shared/billing';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { withTeam } from '@timeline/shared/team-scope';
 import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
@@ -14,8 +15,6 @@ export const metadata: Metadata = {
   title: 'Document',
   description: 'Review a document and extracted timeline context.',
 };
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface Props {
   params: Promise<{ id: string }>;
