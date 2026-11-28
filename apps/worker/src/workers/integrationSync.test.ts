@@ -772,6 +772,29 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
+  it('reconciles HubSpot pipelines after six hours while recently completed pipelines stay idle', async () => {
+    fakes.adminLoadIntegration.mockResolvedValue({ ...integration, provider: 'hubspot' });
+    const due = { kind: 'hubspot.pipeline', externalId: 'sales', label: 'Sales' };
+    const recent = { kind: 'hubspot.pipeline', externalId: 'partners', label: 'Partners' };
+    fakes.adminListSelections.mockResolvedValue([due, recent]);
+    fakes.adminLoadCursor.mockImplementation((_db, _id, resource) =>
+      Promise.resolve(
+        resource === 'sync.recovery'
+          ? {
+              completed: {
+                'hubspot.pipeline:sales': new Date(Date.now() - 6 * 3600_000).toISOString(),
+                'hubspot.pipeline:partners': new Date(Date.now() - 5 * 3600_000).toISOString(),
+              },
+            }
+          : {},
+      ),
+    );
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+    expect(fakes.incrementalSync).toHaveBeenCalledWith(
+      expect.objectContaining({ selections: [due] }),
+    );
+  });
+
   it('leaves completed selections idle while another resource recovers', async () => {
     fakes.adminListSelections.mockResolvedValue([
       { kind: 'github.repo', externalId: 'acme/complete', label: 'Complete' },

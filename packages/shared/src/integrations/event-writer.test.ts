@@ -178,6 +178,12 @@ describe('writeIntegrationEvents visibility', () => {
     expect(await db.select().from(entities)).toHaveLength(3);
     const item = board?.items[0];
     if (!item) throw new Error('Expected imported deal card');
+    const lookup = (externalObjectId: string) =>
+      scope.integrations.getIntegrationResource({ provider: 'hubspot', externalObjectId });
+    expect((await lookup('55:deal:1'))?.entity?.id).toBe(item.entityId);
+    expect((await lookup('55:company:3'))?.entity?.id).toBe(company.id);
+    expect(await lookup('99:deal:1')).toBeNull();
+    expect(await lookup('55:company:4')).toBeNull();
     const dealEffect = async () =>
       (
         await db
@@ -263,7 +269,9 @@ describe('writeIntegrationEvents visibility', () => {
       }),
     ).rejects.toThrow('Both cards have a synced lane');
     expect((await scope.boards.getBoard(boardId))?.items).toHaveLength(2);
+    expect((await lookup('55:deal:1'))?.entity?.id).toBe(survivor.id);
     await scope.boardImports.unlink(link.id);
+    expect((await lookup('55:deal:1'))?.entity).toBeNull();
     await scope.boards.updateBoardItem(keeper.id, { laneId: lane2 }, actor);
     await write('one', 7);
     board = await scope.boards.getBoard(boardId);
@@ -286,7 +294,7 @@ describe('writeIntegrationEvents visibility', () => {
     const boardId = '22222222-1111-4111-8111-222222222222',
       projectId = '33333333-1111-4111-8111-222222222222';
     await pg.exec(`insert into integration_selections(integration_id,selection_kind,external_id) values ('${integration.id}','github.repo','example/app');
-      insert into boards(id,team_id,name) values ('${boardId}','${TEAM_ID}','Work');
+      insert into boards(id,team_id,name,is_shared,created_by) values ('${boardId}','${TEAM_ID}','Work',false,'${USER_ID}');
       insert into entities(id,team_id,type,canonical_name) values ('${projectId}','${TEAM_ID}','project','Application');
       insert into entities(team_id,type,canonical_name) values ('${TEAM_ID}','task','Fix sync');`);
     const config = {
@@ -349,6 +357,18 @@ describe('writeIntegrationEvents visibility', () => {
     const task = preview.rows.find((r) => r.key === 'issue:1')?.candidates[0];
     if (!task) throw new Error('Expected existing task in preview');
     await scope.boardImports.confirm(config, preview.revision, { 'issue:1': task.id });
+    const member = withTeam(db as never, TEAM_ID, USER_B_ID);
+    expect((await member.objects.getObject(task.id))?.statusSource).toBe('locked');
+    expect(
+      (await member.objects.listObjects({ type: 'task' })).find((row) => row.id === task.id)
+        ?.statusSource,
+    ).toBe('locked');
+    expect(await member.boardImports.ownership({ entityId: task.id })).toEqual([]);
+    const issueLookup = { provider: 'github', externalObjectId: 'example/app#1' };
+    expect((await scope.integrations.getIntegrationResource(issueLookup))?.entity?.id).toBe(
+      task.id,
+    );
+    expect((await member.integrations.getIntegrationResource(issueLookup))?.entity).toBeNull();
     await write(3, 'pr.merged', 3);
     await write(3, 'pr.merged', 3);
     await write(4, 'pr.closed', 4);
@@ -388,7 +408,7 @@ describe('writeIntegrationEvents visibility', () => {
     if (!eventId) throw new Error('Expected a source event for the reopened issue');
     expect((await scope.objects.getObject(task.id))?.status).toBe('todo');
     await scope.timeline.setEventVisibility(eventId, { visibility: 'private' });
-    const member = withTeam(db as never, TEAM_ID, USER_B_ID);
+    expect((await member.objects.getObject(task.id))?.statusSource).toBeUndefined();
     expect(
       (await member.boardImports.ownership({ entityId: task.id })).some(
         (link) => link.field === 'status',

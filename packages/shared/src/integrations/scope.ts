@@ -4,6 +4,9 @@ import {
   type Db,
   accounts,
   auditLog,
+  boardImportLinks,
+  boardImportRules,
+  boards,
   connectionAttention,
   connectionAttentionCategory,
   entities,
@@ -25,8 +28,8 @@ import {
   users,
 } from '@timeline/db';
 import type { EventVisibility, TeamRole } from '@timeline/db/contracts/workspace-access';
-import type { NativeProviderId } from '@timeline/db/integration-providers';
-import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { isBoardImportProvider, type NativeProviderId } from '@timeline/db/integration-providers';
+import { and, desc, eq, exists, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
@@ -60,6 +63,7 @@ import {
   isIntegrationHealthPauseKind,
   type IntegrationHealthPauseKind,
 } from '#src/integrations/health.js';
+import { readableImportSource } from '#src/integrations/import-sources.js';
 import { getProvider } from '#src/integrations/registry.js';
 import {
   loadIntegrationSelectionLinks,
@@ -2219,6 +2223,42 @@ export function createIntegrationScope(deps: {
         ),
       )
       .limit(1);
+    let entity = ent[0] ?? null;
+    if (!entity && isBoardImportProvider(input.provider)) {
+      // Each HubSpot deal event also carries its companies. Match the account-qualified
+      // record key so those links can never resolve a deal lookup to its company.
+      const matches = await db
+        .select()
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            isNull(entities.mergedIntoId),
+            exists(
+              db
+                .select({ id: boardImportLinks.id })
+                .from(boardImportLinks)
+                .innerJoin(boardImportRules, eq(boardImportRules.id, boardImportLinks.ruleId))
+                .innerJoin(boards, eq(boards.id, boardImportRules.boardId))
+                .innerJoin(rawEvents, eq(rawEvents.id, boardImportLinks.sourceEventId))
+                .where(
+                  and(
+                    eq(boardImportLinks.entityId, entities.id),
+                    eq(boardImportLinks.teamId, teamId),
+                    eq(boardImportRules.provider, input.provider),
+                    inArray(boardImportLinks.state, ['active', 'paused']),
+                    readableImportSource(userId),
+                    input.provider === 'hubspot'
+                      ? sql`${boardImportRules.externalAccountId} || ':' || ${boardImportLinks.recordKey} = ${input.externalObjectId}`
+                      : sql`(${rawEvents.sourceMetadata} ->> 'external_object_id') = ${input.externalObjectId}`,
+                  ),
+                ),
+            ),
+          ),
+        )
+        .limit(2);
+      if (matches.length === 1) entity = matches[0] ?? null;
+    }
     const integrationVisibility = rawEventVisibleToUser(userId);
     const events = await db
       .select({
@@ -2240,8 +2280,8 @@ export function createIntegrationScope(deps: {
       )
       .orderBy(desc(rawEvents.occurredAt))
       .limit(input.historyLimit ?? 20);
-    if (ent.length === 0 && events.length === 0) return null;
-    return { entity: ent[0] ?? null, history: events };
+    if (!entity && events.length === 0) return null;
+    return { entity, history: events };
   }
 
   async function resumeIntegrationHealth(id: string): Promise<ResumeIntegrationHealthResult> {

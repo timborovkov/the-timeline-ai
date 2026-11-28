@@ -4,16 +4,19 @@ import { nativeProviderLabel } from '@timeline/shared/integrations/provider-labe
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
+import { SYNCED_STATUS_LABEL } from '@/lib/task-statuses';
+
 export function ImportSourceControl({
   source,
   references = [],
 }: {
-  source: NonNullable<boards.BoardItemRow['importSource']>;
+  source: NonNullable<boards.BoardItemRow['importSource']> | 'locked';
   references?: NonNullable<boards.BoardItemRow['importReferences']>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState('');
+  if (source === 'locked') return <p>{SYNCED_STATUS_LABEL}</p>;
   const provider = nativeProviderLabel(source.provider);
   const field =
     source.field === 'lane' ? 'stage' : source.field === 'status' ? 'status' : 'source link';

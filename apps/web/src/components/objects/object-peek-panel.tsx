@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useReducer, useTransition } from 'react';
 
 import { createNoteAction, deleteNoteAction, updateNoteAction } from '@/app/actions/objects';
+import { ImportSourceControl } from '@/components/boards/import-source-control';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
@@ -313,34 +314,41 @@ function TaskDetailMetadata({
   return (
     <div className="space-y-1 px-5 py-5">
       <DetailField label="Status">
-        <EditableMetadata
-          label={task.type === 'task' ? 'Task status' : 'Object status'}
-          className="min-h-8 px-1.5"
-          pending={saving === 'status'}
-        >
-          <EditableMetadata.Value>
+        {task.statusSource ? (
+          <div>
             <CollectionStatus value={task.status} label={statusLabel(displayedStatus)} />
-          </EditableMetadata.Value>
-          <EditableMetadata.Editor>
-            <select
-              value={displayedStatus}
-              onChange={(event) => {
-                save('status', { status: event.currentTarget.value });
-              }}
-              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-              aria-label="Status"
-            >
-              {columns.map((column) => (
-                <option key={column} value={column}>
-                  {statusLabel(column)}
-                </option>
-              ))}
-              {!columns.includes(displayedStatus) ? (
-                <option value={task.status}>{statusLabel(task.status)}</option>
-              ) : null}
-            </select>
-          </EditableMetadata.Editor>
-        </EditableMetadata>
+            <ImportSourceControl source={task.statusSource} />
+          </div>
+        ) : (
+          <EditableMetadata
+            label={task.type === 'task' ? 'Task status' : 'Object status'}
+            className="min-h-8 px-1.5"
+            pending={saving === 'status'}
+          >
+            <EditableMetadata.Value>
+              <CollectionStatus value={task.status} label={statusLabel(displayedStatus)} />
+            </EditableMetadata.Value>
+            <EditableMetadata.Editor>
+              <select
+                value={displayedStatus}
+                onChange={(event) => {
+                  save('status', { status: event.currentTarget.value });
+                }}
+                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                aria-label="Status"
+              >
+                {columns.map((column) => (
+                  <option key={column} value={column}>
+                    {statusLabel(column)}
+                  </option>
+                ))}
+                {!columns.includes(displayedStatus) ? (
+                  <option value={task.status}>{statusLabel(task.status)}</option>
+                ) : null}
+              </select>
+            </EditableMetadata.Editor>
+          </EditableMetadata>
+        )}
       </DetailField>
       <DetailField label="Priority">
         <EditableMetadata

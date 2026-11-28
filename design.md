@@ -274,4 +274,4 @@ For every changed surface:
 
 ### Board import controls
 
-From an active source, **Import and keep in sync** opens a source and board picker with a preview. Show existing matches and unresolved decisions before confirmation. A synced card identifies the provider beside the controlled field, links to the source when available and gives admins a way to stop syncing. Keep unrelated card controls editable. [Import workflow](docs/setup/integrations.md#import-and-keep-in-sync)
+From an active source, **Import and keep in sync** opens a source and board picker with a preview. Show existing matches and unresolved decisions before confirmation. A synced card identifies the provider beside the controlled field, links to the source when available and gives admins a way to stop syncing. When the import board is private, other viewers see only that the task status is synced. Keep unrelated card controls editable. [Import workflow](docs/setup/integrations.md#import-and-keep-in-sync)

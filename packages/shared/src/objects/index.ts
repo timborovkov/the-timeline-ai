@@ -94,7 +94,7 @@ import { documentSummarySourcesAreCurrent } from '#src/documents/visibility.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { getEnv } from '#src/env.js';
 import { UUID_RE } from '#src/identifiers.js';
-import { lockBoardImports, visibleImportSources } from '#src/integrations/import-sources.js';
+import { lockBoardImports, taskStatusSources } from '#src/integrations/import-sources.js';
 import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
@@ -1513,16 +1513,12 @@ export async function listObjects(
     .limit(limit)
     .offset(offset);
   const objects = rows.map(toObjectRow);
-  const sources = await visibleImportSources(
+  const statusSources = await taskStatusSources(
     db,
     scope.teamId,
     scope.userId,
     role,
-    'entity',
     objects.filter((o) => o.type === 'task').map((o) => o.id),
-  );
-  const statusSources = new Map(
-    sources.filter((s) => s.field === 'status' && s.state === 'active').map((s) => [s.entityId, s]),
   );
   for (const object of objects) {
     const source = statusSources.get(object.id);
@@ -3741,15 +3737,14 @@ export async function getObject(
 
   const base = toObjectRow(entityRow);
   if (base.type === 'task') {
-    const links = await visibleImportSources(
+    const statusSources = await taskStatusSources(
       db,
       scope.teamId,
       scope.userId,
       await scope.requireMembership(),
-      'entity',
       [base.id],
     );
-    const source = links.find((link) => link.field === 'status' && link.state === 'active');
+    const source = statusSources.get(base.id);
     if (source) base.statusSource = source;
   }
   const connectedWork = await getConnectedWork(db, scope, base);

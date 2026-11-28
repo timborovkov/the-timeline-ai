@@ -68,7 +68,7 @@ export interface ObjectSearchFilter extends Omit<ObjectListFilter, 'cursor' | 'o
 }
 
 export interface ObjectRow {
-  statusSource?: ImportSource;
+  statusSource?: ImportSource | 'locked';
   id: string;
   type: ObjectType;
   canonicalName: string;

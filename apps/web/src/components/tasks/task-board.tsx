@@ -70,7 +70,7 @@ import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { recoverFromStaleServerAction } from '@/lib/stale-server-action';
 import { statusLabel } from '@/lib/status-labels';
-import { taskDisplayStatus } from '@/lib/task-statuses';
+import { SYNCED_STATUS_LABEL, taskDisplayStatus } from '@/lib/task-statuses';
 import { useReducedMotion } from '@/lib/use-reduced-motion';
 import type { SaveState } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -1394,6 +1394,7 @@ function TaskListView({
   return (
     <div data-task-list className="flex h-full min-h-0 flex-1 flex-col">
       <TaskBulkToolbar
+        hasSyncedStatus={rows.some((row) => row.statusSource && selectedIds.has(row.id))}
         columns={columns}
         members={members}
         selectedIds={selectedIds}
@@ -1496,8 +1497,9 @@ function TaskRowStatus({
 }) {
   const title = displayObjectTitle(row);
   return row.statusSource ? (
-    <span title="Status synced from GitHub">
-      {statusLabel(taskDisplayStatus(row.status))} · GitHub
+    <span title={syncedStatusReason(row)}>
+      {statusLabel(taskDisplayStatus(row.status))} ·{' '}
+      {row.statusSource === 'locked' ? 'Synced' : 'GitHub'}
     </span>
   ) : (
     <EditableMetadata density="compact" label={`Status for ${displayText(title)}`} pending={saving}>
@@ -1526,10 +1528,14 @@ function TaskRowStatus({
     </EditableMetadata>
   );
 }
+function syncedStatusReason(row: TaskObjectRow) {
+  if (!row.statusSource) return undefined;
+  return row.statusSource === 'locked' ? SYNCED_STATUS_LABEL : 'Status synced from GitHub';
+}
 function taskDragState(row: TaskObjectRow, saving: boolean) {
   return {
     disabled: saving || Boolean(row.statusSource),
-    reason: row.statusSource ? 'Status synced from GitHub' : undefined,
+    reason: syncedStatusReason(row),
   };
 }
 
@@ -1758,6 +1764,7 @@ function TaskListRow({
 
 // react-doctor-disable-next-line react-doctor/no-multi-comp -- Bulk controls are local to the task list view and share the same selected-id contract.
 function TaskBulkToolbar({
+  hasSyncedStatus,
   columns,
   members,
   selectedIds,
@@ -1766,6 +1773,7 @@ function TaskBulkToolbar({
   onUpdateTaskCategories,
   taskCategoriesEnabled,
 }: {
+  hasSyncedStatus: boolean;
   columns: string[];
   members: TaskMemberOption[];
   selectedIds: ReadonlySet<string>;
@@ -1858,7 +1866,9 @@ function TaskBulkToolbar({
               <option value="assignee">Assignee</option>
               <option value="due">Due date</option>
               <option value="priority">Priority</option>
-              <option value="status">Status</option>
+              <option value="status" disabled={hasSyncedStatus}>
+                {hasSyncedStatus ? 'Status (selection includes a synced task)' : 'Status'}
+              </option>
               {taskCategoriesEnabled ? <option value="category">Category</option> : null}
             </select>
             {bulk.field === 'status' ? (
@@ -1944,7 +1954,7 @@ function TaskBulkToolbar({
             ) : null}
             <button
               type="button"
-              disabled={pending}
+              disabled={pending || (bulk.field === 'status' && hasSyncedStatus)}
               onClick={() => void applyBulk()}
               className="h-8 rounded-sm border border-border bg-bg px-3 text-xs font-medium hover:bg-signal-soft disabled:cursor-not-allowed disabled:opacity-50"
             >

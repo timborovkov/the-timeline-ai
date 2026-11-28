@@ -1105,10 +1105,13 @@ export async function runOneIntegration(
       triggeredBy === 'reconcile' &&
       provider.syncSelectionPolicy.recovery !== 'all'
     ) {
+      const { reconciliationIntervalMs } = integrationsLib.providerSyncPolicy(integration.provider);
       const dueSelections = selections.filter((selection) => {
         const at = completed[resourceKey(selection)];
         return (
-          !at || !Number.isFinite(Date.parse(at)) || Date.now() - Date.parse(at) >= 24 * 3600_000
+          !at ||
+          !Number.isFinite(Date.parse(at)) ||
+          Date.now() - Date.parse(at) >= reconciliationIntervalMs
         );
       });
       // These providers advance a shared feed/collection cursor. Filtering only

@@ -1436,6 +1436,23 @@ describe('TaskBoard', () => {
     expect(drag.className).toContain('size-8');
   });
 
+  it('shows a synced status without revealing its private source or offering an edit', async () => {
+    const user = userEvent.setup();
+    const rows = [task({ id: 'task-1', statusSource: 'locked' })];
+    const panel = renderBoard('task-1', rows, 'list');
+    expect(screen.getByText('Status controlled by an integration')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Task status' })).toBeNull();
+    panel.unmount();
+    renderBoard(null, rows, 'list');
+    expect(screen.queryByRole('button', { name: 'Status for Send proposal' })).toBeNull();
+    expect(screen.queryByText(/GitHub/i)).toBeNull();
+    await user.click(screen.getByRole('checkbox', { name: 'Select Send proposal' }));
+    expect(
+      screen.getByRole<HTMLOptionElement>('option', { name: /selection includes a synced task/i })
+        .disabled,
+    ).toBe(true);
+  });
+
   it('bulk assigns selected tasks from list view', async () => {
     const user = userEvent.setup();
     renderBoard(

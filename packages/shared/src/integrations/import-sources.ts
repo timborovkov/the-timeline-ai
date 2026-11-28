@@ -18,17 +18,19 @@ export interface ImportSource {
   url: string | null;
   canManage: boolean;
 }
-export async function visibleImportSources(
+async function readImportSources(
   db: Pick<Db, 'select'>,
   teamId: string,
   userId: string,
   role: string,
-  target: 'item' | 'entity',
+  target: 'item' | 'entity' | 'status',
   ids: string[],
 ) {
   if (!ids.length) return [];
+  const readable = readableImportSource(userId);
   const rows = await db
     .select({
+      readable: sql<boolean>`${readable}`,
       id: boardImportLinks.id,
       field: boardImportLinks.field,
       state: boardImportLinks.state,
@@ -46,10 +48,9 @@ export async function visibleImportSources(
       and(
         eq(boardImportLinks.teamId, teamId),
         eq(rawEvents.teamId, teamId),
-        eq(rawEvents.visibility, 'team'),
-        rawEventIsActive(),
-        or(eq(boards.isShared, true), eq(boards.createdBy, userId)),
-        inArray(boardImportLinks.state, ['active', 'paused']),
+        target === 'status'
+          ? and(eq(boardImportLinks.field, 'status'), eq(boardImportLinks.state, 'active'))
+          : and(readable, inArray(boardImportLinks.state, ['active', 'paused'])),
         inArray(target === 'item' ? boardImportLinks.itemId : boardImportLinks.entityId, ids),
       ),
     )
@@ -67,4 +68,34 @@ export async function visibleImportSources(
       ? row.url
       : null,
   }));
+}
+
+export function readableImportSource(userId: string) {
+  return and(
+    eq(rawEvents.visibility, 'team'),
+    rawEventIsActive(),
+    or(eq(boards.isShared, true), eq(boards.createdBy, userId)),
+  );
+}
+
+export function visibleImportSources(
+  db: Pick<Db, 'select'>,
+  teamId: string,
+  userId: string,
+  role: string,
+  target: 'item' | 'entity',
+  ids: string[],
+) {
+  return readImportSources(db, teamId, userId, role, target, ids);
+}
+
+export async function taskStatusSources(
+  db: Pick<Db, 'select'>,
+  teamId: string,
+  userId: string,
+  role: string,
+  ids: string[],
+) {
+  const rows = await readImportSources(db, teamId, userId, role, 'status', ids);
+  return new Map(rows.map((row) => [row.entityId, row.readable ? row : ('locked' as const)]));
 }
