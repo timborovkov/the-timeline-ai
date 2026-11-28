@@ -298,7 +298,8 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     name: NATIVE_PROVIDER_LABELS.linear,
     eyebrow: 'Issue movement becomes a work narrative',
     hero: 'Keep the reason behind the status.',
-    intro: 'Connect selected Linear activity to the conversations and code that explain it.',
+    intro:
+      'Import a Linear team’s issues into a Timeline board and keep task statuses in sync beside the conversations and code that explain them.',
     seoTitle: 'Linear integration for cited project history',
     seoDescription:
       'Sync Linear issues, comments, status, assignee, priority, and project changes into The Timeline for cited project updates and answers.',

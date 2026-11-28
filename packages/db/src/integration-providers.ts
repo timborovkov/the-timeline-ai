@@ -16,6 +16,7 @@ export function isNativeProviderId(provider: string): provider is NativeProvider
 
 export const BOARD_IMPORT_PROVIDERS = [
   'github',
+  'linear',
   'hubspot',
 ] as const satisfies readonly NativeProviderId[];
 export type BoardImportProvider = (typeof BOARD_IMPORT_PROVIDERS)[number];

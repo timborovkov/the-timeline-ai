@@ -23,13 +23,17 @@ import {
   isBoardImportProvider,
   type BoardImportProvider,
 } from '@timeline/db/integration-providers';
-import { and, arrayOverlaps, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, arrayOverlaps, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { createBoardScope } from '#src/boards/index.js';
 import { assertBoardObjectType } from '#src/boards/qualification-policy.js';
 import { recordsForImport, type ImportRecord } from '#src/integrations/import-records.js';
-import { lockBoardImports, visibleImportSources } from '#src/integrations/import-sources.js';
+import {
+  lockBoardImports,
+  readableImportSource,
+  visibleImportSources,
+} from '#src/integrations/import-sources.js';
 import { githubClosingIssueKeys } from '#src/integrations/providers/github.js';
 import { adminDecryptIntegrationTokens } from '#src/integrations/scope.js';
 import { createObjectScope } from '#src/objects/index.js';
@@ -63,10 +67,11 @@ export interface BoardImportPreviewRow {
   target: string | null;
   eventId: string;
 }
-const sourceKind = { github: 'github.repo', hubspot: 'hubspot.pipeline' } as const satisfies Record<
-  BoardImportProvider,
-  string
->;
+const sourceKind = {
+  github: 'github.repo',
+  linear: 'linear.team',
+  hubspot: 'hubspot.pipeline',
+} as const satisfies Record<BoardImportProvider, string>;
 function isBoardImportSource(source: { provider: string; kind: string }) {
   return isBoardImportProvider(source.provider) && source.kind === sourceKind[source.provider];
 }
@@ -154,8 +159,7 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
     const selected = (await sources(query, config.integrationId)).find(
       (s) => s.resource === config.resource && isBoardImportSource(s),
     );
-    if (!selected?.account)
-      throw new Error('Select an active team-visible repository or pipeline.');
+    if (!selected?.account) throw new Error('Select an active team-visible source.');
     return { ...selected, account: selected.account };
   }
   async function context(query: Db, config: Config) {
@@ -172,7 +176,7 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
         ),
       )
       .for('share');
-    if (board) assertBoardObjectType(board, s.provider === 'github' ? 'task' : 'deal');
+    if (board) assertBoardObjectType(board, s.provider === 'hubspot' ? 'deal' : 'task');
     if (!board) throw new Error('Destination board is unavailable.');
     const lanes = await query
       .select()
@@ -193,6 +197,11 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
       throw new Error('Select a GitHub import option and a project for merged work.');
     if (s.provider === 'hubspot' && (config.issues || config.merges || config.projectId))
       throw new Error('Invalid pipeline options.');
+    if (
+      s.provider === 'linear' &&
+      (config.merges || config.projectId || config.history || Object.keys(config.stageLanes).length)
+    )
+      throw new Error('Linear team imports sync issue status only.');
     if (config.projectId) {
       const [project] = await query
         .select({ id: entities.id })
@@ -221,7 +230,13 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
       throw new Error('This source already syncs to another board.');
     return { s, board, lanes, existing };
   }
-  async function observations(query: Db, config: Config, provider: string) {
+  async function observations(
+    query: Db,
+    config: { integrationId: string; resource?: string },
+    provider: string,
+    issueIds?: string[],
+  ) {
+    if (issueIds && !issueIds.length) return [];
     const metadata = rawEvents.sourceMetadata;
     const rows = await query
       .selectDistinctOn([sql`${metadata}->>'external_object_id'`], {
@@ -237,9 +252,12 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
           eq(rawEvents.visibility, 'team'),
           rawEventIsActive(),
           sql`${metadata}->>'provider'=${provider} and ${metadata}->>'integration_id'=${config.integrationId}`,
+          issueIds ? inArray(sql<string>`${metadata}->>'external_object_id'`, issueIds) : undefined,
           provider === 'github'
             ? sql`${metadata}->'github'->>'repo'=${config.resource} and ${metadata}->>'event_type' in ('pr.merged','issue.reopened','issue.closed','issue.updated')`
-            : sql`${metadata}->'hubspot'->>'pipeline_id'=${config.resource}`,
+            : provider === 'linear'
+              ? sql`${metadata} #>> '{linear,kind}'='issue'`
+              : sql`${metadata}->'hubspot'->>'pipeline_id'=${config.resource}`,
         ),
       )
       .orderBy(
@@ -250,6 +268,9 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
       );
     const records = new Map<string, ImportRecord>();
     for (const record of rows.flatMap(recordsForImport)) {
+      // Linear issues can move between teams. Choose the latest observation across the
+      // connection before filtering by team so an old team cannot import a departed issue.
+      if (config.resource !== undefined && record.resource !== config.resource) continue;
       const old = records.get(record.key);
       if (!old || old.sourceAt < record.sourceAt) records.set(record.key, record);
     }
@@ -318,10 +339,16 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
       if (own) {
         entry.target = own.entityId;
         entry.action = own.state === 'unlinked' ? 'Skipped' : 'Link to existing';
-        entry.reason = own.state === 'unlinked' ? 'Sync stopped' : 'Previously linked';
+        entry.reason =
+          own.state === 'unlinked'
+            ? 'Sync stopped'
+            : !record.active && record.kind === 'issue'
+              ? 'Issue removed from Linear'
+              : 'Previously linked';
       } else if (!record.active) {
         entry.action = 'Skipped';
-        entry.reason = 'Outside the selected pipeline';
+        entry.reason =
+          record.kind === 'issue' ? 'Issue removed from Linear' : 'Outside the selected pipeline';
       }
       if (entry.action === 'Skipped') continue;
       if (record.stage && !rule.stageLanes[record.stage]) {
@@ -400,6 +427,62 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
           entry.action = 'Review possible matches';
           entry.candidates = identities;
           entry.reason = 'Choose the existing record';
+          continue;
+        }
+      }
+      if (record.linearIssueId) {
+        const matches = await query
+          .select({
+            id: entities.id,
+            name: entities.canonicalName,
+            archivedAt: entities.archivedAt,
+          })
+          .from(entities)
+          .where(
+            and(
+              eq(entities.teamId, teamId),
+              eq(entities.type, 'task'),
+              isNull(entities.mergedIntoId),
+              or(
+                sql`${entities.metadata}->>'integration_provider'='linear' and ${entities.metadata}->>'integration_external_id'=${record.linearIssueId}`,
+                exists(
+                  query
+                    .select({ id: boardImportLinks.id })
+                    .from(boardImportLinks)
+                    .innerJoin(boardImportRules, eq(boardImportRules.id, boardImportLinks.ruleId))
+                    .innerJoin(boards, eq(boards.id, boardImportRules.boardId))
+                    .innerJoin(rawEvents, eq(rawEvents.id, boardImportLinks.sourceEventId))
+                    .where(
+                      and(
+                        eq(boardImportLinks.entityId, entities.id),
+                        eq(boardImportLinks.teamId, teamId),
+                        eq(boardImportRules.provider, rule.provider),
+                        eq(boardImportRules.externalAccountId, rule.externalAccountId),
+                        eq(boardImportLinks.recordKey, record.key),
+                        readableImportSource(userId),
+                      ),
+                    ),
+                ),
+              ),
+            ),
+          )
+          .orderBy(entities.id);
+        if (matches.length) {
+          entry.candidates = matches
+            .filter((m) => !m.archivedAt)
+            .map(({ id, name }) => ({ id, name }));
+          if (!entry.candidates.length) {
+            entry.action = 'Skipped';
+            entry.reason = 'Restore the archived Linear task to link it';
+          } else if (entry.candidates.length === 1 && entry.candidates[0]) {
+            entry.action = 'Link to existing';
+            entry.reason = 'Same Linear issue ID';
+            entry.target = entry.candidates[0].id;
+            entry.candidates = [];
+          } else {
+            entry.action = 'Review possible matches';
+            entry.reason = 'Choose the task linked to this Linear issue';
+          }
           continue;
         }
       }
@@ -502,7 +585,7 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
     const rule = {
       provider: ctx.s.provider,
       externalAccountId: ctx.s.account,
-      importIssues: config.issues,
+      importIssues: ctx.s.provider === 'linear' || config.issues,
       mergedPrs: config.merges,
       mergesSince: config.history
         ? new Date(0)
@@ -1075,6 +1158,16 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
           .for('share');
         const managed = new Set<string>();
         const authorized = rules.length ? await sources(query, integrationId) : [];
+        const delivered = events.flatMap(recordsForImport);
+        const current =
+          integration.provider === 'linear' && rules.length
+            ? await observations(
+                query,
+                { integrationId },
+                'linear',
+                delivered.flatMap((r) => (r.linearIssueId ? [r.linearIssueId] : [])),
+              )
+            : delivered;
         for (const rule of rules) {
           const config = {
             integrationId,
@@ -1102,7 +1195,7 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
             )
             .for('share');
           if (!destination) continue;
-          const allowedType = rule.provider === 'github' ? 'task' : 'deal';
+          const allowedType = rule.provider === 'hubspot' ? 'deal' : 'task';
           if (
             destination.strictObjectTypes &&
             !(
@@ -1146,7 +1239,12 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
             .from(boardImportLinks)
             .where(and(eq(boardImportLinks.teamId, teamId), eq(boardImportLinks.ruleId, rule.id)))
             .for('update');
-          const eventRecords = events.flatMap(recordsForImport);
+          if (integration.provider === 'linear') {
+            for (const record of delivered) {
+              if (record.resource === rule.resourceId) managed.add(record.eventId);
+            }
+          }
+          const eventRecords = current;
           const availableKeys = eventRecords
             .filter(
               (r) => r.resource === rule.resourceId && (r.kind === 'issue' || r.kind === 'company'),
@@ -1181,7 +1279,28 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
               a.sourceAt.getTime() - b.sourceAt.getTime(),
           );
           for (const record of records) {
-            if (record.resource !== config.resource || !eligible(record, rule)) continue;
+            if (record.resource !== config.resource) {
+              // A team transfer releases the old rule without applying the new team's status.
+              if (
+                record.linearIssueId &&
+                links.some((link) => link.recordKey === record.key && link.state === 'active')
+              ) {
+                await query
+                  .update(boardImportLinks)
+                  .set({ state: 'paused', sourceAt: record.sourceAt })
+                  .where(
+                    and(
+                      eq(boardImportLinks.teamId, teamId),
+                      eq(boardImportLinks.ruleId, rule.id),
+                      eq(boardImportLinks.recordKey, record.key),
+                      eq(boardImportLinks.state, 'active'),
+                      sql`${boardImportLinks.sourceAt} <= ${record.sourceAt.toISOString()}::timestamptz`,
+                    ),
+                  );
+              }
+              continue;
+            }
+            if (!eligible(record, rule)) continue;
             managed.add(record.eventId);
             await resolveMergedWork(query, integrationId, [record], links);
             const [entry] = await previewRows(query, [record], rule, links);

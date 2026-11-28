@@ -183,7 +183,7 @@ interface LinearProjectNode {
 
 interface LinearCursor {
   updated_after?: string;
-  /** Last observed lifecycle bucket per Linear issue id. */
+  /** Last observed team and lifecycle bucket per issue. Older cursors contain only the bucket. */
   issue_statuses?: Record<string, string>;
 }
 
@@ -359,14 +359,10 @@ function linearIssueDedupKey(
     | 'project'
     | 'parent'
   >,
-  opts?: { previousStatus?: string | null; forceTransition?: boolean },
+  opts?: { forceTransition?: boolean },
 ): string {
   const status = linearStatus(node.state.type);
-  const previousStatus = opts?.previousStatus;
-  const transitioned =
-    opts?.forceTransition === true ||
-    (typeof previousStatus === 'string' && previousStatus !== status);
-  if (transitioned) {
+  if (opts?.forceTransition) {
     return `linear:issue:${node.id}:${status}:${node.updatedAt}`;
   }
   const revision = linearIssueRevisionDigest(node);
@@ -379,7 +375,7 @@ function linearCommentBodyDigest(body: string): string {
 
 function issueToEvent(
   node: LinearIssueNode,
-  opts?: { previousStatus?: string | null; forceTransition?: boolean },
+  opts?: { forceTransition?: boolean },
 ): IntegrationEvent {
   const actor: { externalId?: string; name?: string; email?: string } | null = node.assignee
     ? {
@@ -581,9 +577,14 @@ async function paginateIssues(
       const touched = new Set<string>();
       await ctx.writeEvents(
         nodes.map((node) => {
-          const previous = statuses[node.id] ?? null;
-          const event = issueToEvent(node, { previousStatus: previous });
-          statuses[node.id] = linearStatus(node.state.type);
+          const previous = statuses[node.id];
+          const status = linearStatus(node.state.type);
+          const teamStatus = node.team.id + ':' + status;
+          const event = issueToEvent(node, {
+            forceTransition:
+              previous !== undefined && previous !== status && previous !== teamStatus,
+          });
+          statuses[node.id] = teamStatus;
           touched.add(node.id);
           return event;
         }),
@@ -878,13 +879,38 @@ export const linearProvider: IntegrationProvider = {
     switch (p.type) {
       case 'Issue': {
         const node = p.data as unknown as LinearIssueNode;
-        if (!node.id || !node.updatedAt) return [];
+        if (!node.id) return [];
+        if (p.action === 'remove') {
+          const teamId = node.team?.id ?? p.data.teamId;
+          if (typeof teamId !== 'string') return [];
+          const removedAt = p.createdAt ?? node.updatedAt;
+          if (!removedAt) return [];
+          return [
+            {
+              provider: 'linear',
+              signalClass: 'captured_work',
+              eventType: 'issue.removed',
+              externalObjectId: node.id,
+              externalEventId: removedAt,
+              occurredAt: new Date(removedAt),
+              dedupKey: 'linear:issue:' + node.id + ':removed:' + removedAt,
+              contentText: 'Removed Linear issue ' + (node.identifier ?? node.id),
+              extra: {
+                linear: { kind: 'issue', team: { id: teamId }, identifier: node.identifier },
+              },
+            },
+          ];
+        }
+        if (!node.updatedAt) return [];
         const updatedFrom = p.updatedFrom;
-        const forceTransition = Boolean(
-          updatedFrom &&
-          (Object.prototype.hasOwnProperty.call(updatedFrom, 'stateId') ||
-            Object.prototype.hasOwnProperty.call(updatedFrom, 'state')),
-        );
+        const forceTransition =
+          p.action === 'restore' ||
+          Boolean(
+            updatedFrom &&
+            ['stateId', 'state', 'teamId', 'archivedAt'].some((key) =>
+              Object.hasOwn(updatedFrom, key),
+            ),
+          );
         return [issueToEvent(node, { forceTransition })];
       }
       case 'Comment': {

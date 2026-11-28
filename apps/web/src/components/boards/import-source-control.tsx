@@ -27,7 +27,7 @@ export function ImportSourceControl({
         ? 'Imported from ' + provider
         : field === 'stage'
           ? 'Stage synced from HubSpot'
-          : 'Status synced from GitHub';
+          : 'Status synced from ' + provider;
   return (
     <section className="space-y-1 border-b border-border px-3 py-2 text-sm">
       <p>{label}</p>

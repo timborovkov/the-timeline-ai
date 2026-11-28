@@ -215,7 +215,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     id: 'linear',
     label: NATIVE_PROVIDER_LABELS.linear,
     description:
-      'Issues, comments, status / assignee / priority changes, and projects sync as cited events and work-artifact evidence.',
+      'Import a Linear team’s issues into a board and keep task statuses in sync. Issues, comments, and projects also provide cited evidence.',
     logo: '/connectors/linear.svg',
     category: 'project-management',
     kind: 'native',

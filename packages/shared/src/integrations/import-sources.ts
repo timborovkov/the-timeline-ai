@@ -1,4 +1,8 @@
 import { boardImportLinks, boardImportRules, boards, rawEvents, type Db } from '@timeline/db';
+import {
+  isBoardImportProvider,
+  type BoardImportProvider,
+} from '@timeline/db/integration-providers';
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 
 import { rawEventIsActive } from '#src/visibility.js';
@@ -9,6 +13,12 @@ export function lockBoardImports(db: Pick<Db, 'execute'>, teamId: string) {
     sql`select pg_advisory_xact_lock(hashtextextended(${'board-import:' + teamId},0))`,
   );
 }
+
+const sourceUrlPrefixes = {
+  github: 'https://github.com/',
+  hubspot: 'https://app.hubspot.com/',
+  linear: 'https://linear.app/',
+} satisfies Record<BoardImportProvider, string>;
 
 export interface ImportSource {
   id: string;
@@ -62,11 +72,10 @@ async function readImportSources(
   return rows.map((row) => ({
     ...row,
     canManage: role === 'owner' || role === 'admin',
-    url: row.url?.startsWith(
-      row.provider === 'github' ? 'https://github.com/' : 'https://app.hubspot.com/',
-    )
-      ? row.url
-      : null,
+    url:
+      isBoardImportProvider(row.provider) && row.url?.startsWith(sourceUrlPrefixes[row.provider])
+        ? row.url
+        : null,
   }));
 }
 

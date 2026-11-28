@@ -78,7 +78,8 @@ export async function POST(req: Request) {
     const messages = [
       'Map each pipeline stage before confirming.',
       'This object type is not allowed on this board.',
-      'Select an active team-visible repository or pipeline.',
+      'Select an active team-visible source.',
+      'Linear team imports sync issue status only.',
       'A mapped lane is unavailable.',
       'Destination board is unavailable.',
       'Destination project is unavailable.',

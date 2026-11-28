@@ -343,7 +343,7 @@ email-facet proposal; approval resolves it only after the person exists.
 
 ### One-way board imports
 
-A team admin can preview and confirm a rule for one active team-shared GitHub repository or HubSpot pipeline and destination board. This authorizes deterministic changes to the linked task status or card lane. A confirmed identity survives a rename. Source events stay immutable and import receipts identify each source decision. Ambiguous identities wait for an admin to resolve them in the import preview. Paused HubSpot deals can resume on re-entry, and stopping sync on a field restores local control. Unstructured evidence and proposal approvals follow their existing paths. [Import workflow](setup/integrations.md#import-and-keep-in-sync) · [HubSpot setup](setup/hubspot.md)
+A team admin can preview and confirm a rule for one active team-shared GitHub repository, Linear team, or HubSpot pipeline and destination board. This authorizes deterministic changes to the linked task status or card lane. A confirmed identity survives a rename. Source events stay immutable and import receipts identify each source decision. Ambiguous identities wait for an admin to resolve them in the import preview. Paused HubSpot deals can resume on re-entry, and stopping sync on a field restores local control. Unstructured evidence and proposal approvals follow their existing paths. [Import workflow](setup/integrations.md#import-and-keep-in-sync) · [HubSpot setup](setup/hubspot.md)
 
 ### GitHub completed work
 

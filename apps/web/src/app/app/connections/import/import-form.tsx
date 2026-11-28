@@ -57,7 +57,7 @@ export function ImportForm({
       <p>
         {source
           ? 'Create a destination board to import into.'
-          : 'Activate a repository or deal pipeline for team capture first.'}{' '}
+          : 'Activate a GitHub repository, Linear team, or HubSpot pipeline for team capture first.'}{' '}
         <Link href={source ? '/app/boards' : '/app/connections/sources'}>
           {source ? 'Open boards' : 'Open shared sources'}
         </Link>
@@ -223,6 +223,11 @@ function SourceImport({
               </>
             )}
           </div>
+        ) : source.provider === 'linear' ? (
+          <p>
+            Preview this team’s issues and their matching tasks. After confirmation, Linear will
+            control the linked tasks’ status.
+          </p>
         ) : (
           <p>
             Preview the pipeline, choose a lane for each stage, then preview your matches. Future
@@ -230,7 +235,7 @@ function SourceImport({
           </p>
         )}
         {preview &&
-          !git &&
+          source.provider === 'hubspot' &&
           Object.entries(preview.stages).map(([id, label]) => (
             <label key={id} className="block">
               {label}
@@ -265,7 +270,7 @@ function SourceImport({
         {canConfirm && (
           <ImportReview
             preview={preview}
-            git={git}
+            pipeline={source.provider === 'hubspot'}
             mapping={mapping}
             choices={choices}
             setChoices={setChoices}
@@ -285,22 +290,22 @@ function importConfig(source: Source, settings: NonNullable<Source['settings']>)
     resource: source.resource,
     boardId: settings.boardId,
     projectId: git && settings.merges ? settings.projectId : null,
-    issues: git && settings.issues,
+    issues: source.provider === 'linear' || (git && settings.issues),
     merges: git && settings.merges,
     history: git && settings.merges && settings.history,
-    stageLanes: git ? {} : settings.stageLanes,
+    stageLanes: source.provider === 'hubspot' ? settings.stageLanes : {},
   };
 }
 function ImportReview({
   preview,
-  git,
+  pipeline,
   mapping,
   choices,
   setChoices,
   confirm,
 }: {
   preview: Preview;
-  git: boolean;
+  pipeline: boolean;
   mapping: Record<string, string>;
   choices: Record<string, string>;
   setChoices: (choices: Record<string, string>) => void;
@@ -348,13 +353,13 @@ function ImportReview({
       {!preview.rows.length && (
         <p>No historical records match these options. Future matching records will sync.</p>
       )}
-      {!git && !Object.keys(preview.stages).length && (
+      {pipeline && !Object.keys(preview.stages).length && (
         <p>Waiting for the first pipeline sync. Preview again once capture finishes.</p>
       )}
       <Button
         type="button"
         disabled={
-          !git &&
+          pipeline &&
           (!Object.keys(preview.stages).length ||
             Object.keys(preview.stages).some((stage) => !mapping[stage]))
         }

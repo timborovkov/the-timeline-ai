@@ -13,6 +13,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { useQueries } from '@tanstack/react-query';
+import { nativeProviderLabel } from '@timeline/shared/integrations/provider-labels';
 import type * as objects from '@timeline/shared/objects/types';
 import { TASK_CATEGORY_OPTIONS, type TaskCategory } from '@timeline/shared/task-categories/types';
 import { GripVertical, ListTodo } from 'lucide-react';
@@ -1499,7 +1500,7 @@ function TaskRowStatus({
   return row.statusSource ? (
     <span title={syncedStatusReason(row)}>
       {statusLabel(taskDisplayStatus(row.status))} ·{' '}
-      {row.statusSource === 'locked' ? 'Synced' : 'GitHub'}
+      {row.statusSource === 'locked' ? 'Synced' : nativeProviderLabel(row.statusSource.provider)}
     </span>
   ) : (
     <EditableMetadata density="compact" label={`Status for ${displayText(title)}`} pending={saving}>
@@ -1530,7 +1531,9 @@ function TaskRowStatus({
 }
 function syncedStatusReason(row: TaskObjectRow) {
   if (!row.statusSource) return undefined;
-  return row.statusSource === 'locked' ? SYNCED_STATUS_LABEL : 'Status synced from GitHub';
+  return row.statusSource === 'locked'
+    ? SYNCED_STATUS_LABEL
+    : 'Status synced from ' + nativeProviderLabel(row.statusSource.provider);
 }
 function taskDragState(row: TaskObjectRow, saving: boolean) {
   return {

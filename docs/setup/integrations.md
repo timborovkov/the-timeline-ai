@@ -38,7 +38,7 @@ Disconnecting an active import stops that team's sync path. Deleting a provider 
 
 ## Import and keep in sync
 
-1. Open the active GitHub or HubSpot source under **Connections → Sources** and choose **Import and keep in sync**. Select a repository or pipeline and its destination board. Connecting the account and activating capture make the source available for this step.
+1. Open the active GitHub, Linear, or HubSpot source under **Connections → Sources** and choose **Import and keep in sync**. Select a GitHub repository, Linear team, or HubSpot pipeline and its destination board. Connecting the account and activating capture make the source available for this step.
 2. For GitHub, select issues, merged PRs, or both. Merged-PR tracking needs a destination project and starts with future merges. Select **Include past merges** to bring in earlier work. For HubSpot, preview the pipeline, map each stage to a lane, then preview again.
 3. Review what Timeline will create, link or skip. For example, choose the existing company for an imported renewal, then confirm the deal separately if it also has a possible match. Unresolved matches can wait while independent records proceed. Choose **Confirm and keep in sync** to authorize the rule.
 4. Open an imported card to see the source beside its controlled status or lane. Future provider changes update that field on the board. An admin can stop syncing the field to keep its current value and edit it locally. Changes flow from the provider into Timeline.
@@ -47,7 +47,7 @@ If the connection owner restricts the event that currently controls a field, syn
 
 When you merge a synced deal into another deal, its source follows the surviving deal and card. If both cards have a source controlling their lane on the same board, stop syncing one before merging.
 
-For the provider-specific mappings and examples, see [GitHub issues and merges](github.md#import-repository-work-into-a-board) and [HubSpot deal pipelines](hubspot.md#import-into-a-board).
+For the provider-specific mappings and examples, see [GitHub issues and merges](github.md#import-repository-work-into-a-board), [Linear issues](linear.md#import-issues-into-a-board), and [HubSpot deal pipelines](hubspot.md#import-into-a-board).
 
 <span id="connection-health"></span>
 

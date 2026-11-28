@@ -278,6 +278,131 @@ describe('writeIntegrationEvents visibility', () => {
     expect(board?.items.find((card) => card.id === keeper.id)?.laneId).toBe(lane2);
   });
 
+  it('imports only confirmed Linear team issues, reuses issue IDs and releases status after unlink', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'linear',
+        externalAccountId: 'org',
+        displayName: 'Linear',
+      })
+      .returning();
+    if (!integration) throw new Error('Expected Linear connection');
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const boardId = '22222222-1111-4111-8111-222222222222';
+    const taskId = '33333333-1111-4111-8111-222222222222';
+    await pg.exec(`insert into integration_selections(integration_id,selection_kind,external_id) values ('${integration.id}','linear.team','engineering');
+      insert into boards(id,team_id,name,is_shared,created_by) values ('${boardId}','${TEAM_ID}','Work',true,'${USER_ID}');
+      insert into entities(id,team_id,type,canonical_name,status,metadata) values ('${taskId}','${TEAM_ID}','task','Original local title','todo','{"integration_provider":"linear","integration_external_id":"issue-A"}');`);
+    const { linearProvider } = await import('#src/integrations/providers/linear.js');
+    const handle = linearProvider.handleWebhook?.bind(linearProvider);
+    if (!handle) throw new Error('Expected Linear webhook handler');
+    const write = async (
+      data: Record<string, unknown>,
+      type = 'Issue',
+      visibility: 'team' | 'private' = 'team',
+      action = 'update',
+    ) => {
+      const result = await handle({
+        integration,
+        payload: { type, action, updatedFrom: { stateId: 'old' }, data },
+      });
+      const events = Array.isArray(result) ? result : result.events;
+      await writeIntegrationEvents({
+        db: db as never,
+        integration,
+        events: events.map((evt) => ({ ...evt, visibility })),
+      });
+    };
+    const issue = {
+      id: 'issue-A',
+      identifier: 'ENG-1',
+      title: 'New upstream title',
+      url: 'https://linear.app/example/issue/ENG-1',
+      team: { id: 'engineering', key: 'ENG', name: 'Engineering' },
+      state: { type: 'started', name: 'In Progress' },
+      updatedAt: '2026-06-01T10:00:00Z',
+    };
+    await write(issue);
+    await write({ ...issue, id: 'issue-B', identifier: 'ENG-2', title: 'New task' });
+    await write({ ...issue, id: 'issue-private', title: 'Private issue' }, 'Issue', 'private');
+    await write({ ...issue, id: 'issue-X', team: { id: 'sales', key: 'S', name: 'Sales' } });
+    await write(
+      {
+        id: 'comment',
+        body: 'Reviewed',
+        updatedAt: issue.updatedAt,
+        issue: { id: issue.id, identifier: issue.identifier, title: issue.title },
+      },
+      'Comment',
+    );
+    expect((await scope.boards.getBoard(boardId))?.items).toHaveLength(0);
+    const config = {
+      integrationId: integration.id,
+      resource: 'engineering',
+      boardId,
+      issues: true,
+      merges: false,
+      projectId: null,
+      history: false,
+      stageLanes: {},
+    };
+    const preview = await scope.boardImports.preview(config);
+    expect(preview.rows.map(({ key, action, target }) => ({ key, action, target }))).toEqual([
+      { key: 'issue:issue-A', action: 'Link to existing', target: taskId },
+      { key: 'issue:issue-B', action: 'Create', target: null },
+    ]);
+    expect((await scope.objects.getObject(taskId))?.status).toBe('todo');
+    await scope.boardImports.confirm(config, preview.revision, {});
+    expect((await scope.boards.getBoard(boardId))?.items).toHaveLength(2);
+    expect((await scope.objects.getObject(taskId))?.status).toBe('doing');
+    const latest = {
+      ...issue,
+      state: { type: 'completed', name: 'Done' },
+      updatedAt: '2026-06-02T10:00:00Z',
+    };
+    await write(latest);
+    await write(latest);
+    await write(issue);
+    expect((await scope.objects.getObject(taskId))?.status).toBe('done');
+    const [link] = await scope.boardImports.ownership({ entityId: taskId });
+    expect(link).toMatchObject({
+      provider: 'linear',
+      field: 'status',
+      url: issue.url,
+      state: 'active',
+    });
+    if (!link) throw new Error('Expected status link');
+    const moved = {
+      ...latest,
+      team: { id: 'sales', key: 'SAL', name: 'Sales' },
+      updatedAt: '2026-06-02T11:00:00Z',
+    };
+    await write(moved);
+    expect((await scope.objects.getObject(taskId))?.statusSource).toBeUndefined();
+    expect((await scope.boardImports.preview(config)).rows.map((r) => r.key)).not.toContain(
+      'issue:issue-A',
+    );
+    await write(issue);
+    expect((await scope.objects.getObject(taskId))?.statusSource).toBeUndefined();
+    await write({ ...latest, updatedAt: '2026-06-02T12:00:00Z' });
+    expect((await scope.objects.getObject(taskId))?.statusSource).toMatchObject({
+      provider: 'linear',
+    });
+    await write({ ...latest, updatedAt: '2026-06-02T13:00:00Z' }, 'Issue', 'team', 'remove');
+    expect((await scope.objects.getObject(taskId))?.statusSource).toBeUndefined();
+    await scope.boardImports.unlink(link.id);
+    await write({
+      ...latest,
+      state: { type: 'canceled', name: 'Cancelled' },
+      updatedAt: '2026-06-03T10:00:00Z',
+    });
+    expect((await scope.objects.getObject(taskId))?.status).toBe('done');
+    expect((await scope.objects.getObject(taskId))?.statusSource).toBeUndefined();
+  });
+
   it('syncs GitHub issues and merged work and releases status when source visibility narrows', async () => {
     const [integration] = await db
       .insert(integrations)

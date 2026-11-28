@@ -29,6 +29,9 @@
   "apps/web/src/app/workspace-suspended/page.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/app/connections/import/import-form.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/agent-reporting-settings.test.tsx": {
     "group": "dom"
   },

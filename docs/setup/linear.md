@@ -25,3 +25,9 @@ Timeline uses Linear OAuth plus an optional signed webhook. OAuth grants the con
 <span id="github"></span>
 
 Shared prerequisites, health and resync: [integrations](integrations.md).
+
+## Import issues into a board
+
+In **Connections → Sources**, open Linear and choose **Import and keep in sync**. Select an activated, team-visible Linear team and a destination board that accepts tasks. Preview the issues already captured for that team. Timeline links an existing task with the same Linear issue ID even if its title changed. Review title and identifier matches before choosing a task.
+
+Choose **Confirm and keep in sync** to import the selected team's issues and keep their task statuses up to date. Started issues appear as Doing, completed issues as Done, canceled issues as Cancelled, and other open issues as To do. When capture observes an issue move to another team or receives its removal webhook, the old board releases the status and keeps the local task. Comments and projects remain available as evidence. An admin can use **Stop syncing status** on a task to edit its status locally. [Import workflow](integrations.md#import-and-keep-in-sync)

@@ -17,6 +17,24 @@ const github = z.object({
   url: z.string(),
   closing_issues: z.array(z.string()).optional(),
 });
+const linearIssue = z.object({
+  kind: z.literal('issue'),
+  team: z.object({ id: z.string().min(1) }),
+});
+const linearTask = z.object({
+  type: z.literal('task'),
+  externalId: z.string().min(1),
+  displayTitle: z.string().min(1),
+  status: z.enum(['open', 'in_progress', 'done', 'cancelled']),
+  url: z.string().optional(),
+  aliases: z.array(z.string()).default([]),
+});
+const linearTaskStatuses = {
+  open: 'todo',
+  in_progress: 'doing',
+  done: 'done',
+  cancelled: 'cancelled',
+} as const;
 const hubspot = z.object({
   id: z.string(),
   pipeline_id: z.string(),
@@ -35,8 +53,9 @@ const envelope = z.object({
   external_object_id: z.string(),
   dedup_key: z.string(),
   object_map: z
-    .object({ displayTitle: z.string().optional(), aliases: z.array(z.string()).optional() })
+    .looseObject({ displayTitle: z.string().optional(), aliases: z.array(z.string()).optional() })
     .nullish(),
+  linear: z.unknown().optional(),
   github: z.unknown().optional(),
   hubspot: z.unknown().optional(),
 });
@@ -49,7 +68,8 @@ export interface ImportRecord {
   url: string | null;
   sourceAt: Date;
   eventId: string;
-  status?: 'todo' | 'cancelled' | 'done';
+  linearIssueId?: string;
+  status?: 'doing' | 'todo' | 'cancelled' | 'done';
   stage?: string;
   stageLabel?: string;
   active: boolean;
@@ -111,6 +131,40 @@ export function recordsForImport(row: {
           g.repo + '#' + String(g.number),
           ...(meta.object_map?.aliases ?? []),
         ],
+      },
+    ];
+  }
+  if (meta.provider === 'linear') {
+    const issue = linearIssue.safeParse(meta.linear);
+    if (!issue.success) return [];
+    if (meta.event_type === 'issue.removed')
+      return [
+        {
+          ...base,
+          key: 'issue:' + meta.external_object_id,
+          linearIssueId: meta.external_object_id,
+          kind: 'issue',
+          type: 'task',
+          resource: issue.data.team.id,
+          title: 'Removed Linear issue',
+          url: null,
+          active: false,
+        },
+      ];
+    const task = linearTask.safeParse(meta.object_map);
+    if (!task.success || task.data.externalId !== meta.external_object_id) return [];
+    return [
+      {
+        ...base,
+        key: 'issue:' + task.data.externalId,
+        linearIssueId: task.data.externalId,
+        kind: 'issue',
+        type: 'task',
+        resource: issue.data.team.id,
+        title: task.data.displayTitle,
+        url: task.data.url ?? null,
+        status: linearTaskStatuses[task.data.status],
+        aliases: task.data.aliases,
       },
     ];
   }
