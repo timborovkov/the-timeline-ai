@@ -4,6 +4,8 @@ import { paidSignupPlan, type PaidSignupPlanId } from '@/lib/signup-plan';
 const APP_FALLBACK = '/app';
 const SIGN_IN_CONTINUATION_PATH = '/sign-in/continue';
 const AUTH_PATHS = ['/sign-in', '/sign-up', SIGN_IN_CONTINUATION_PATH];
+export const ACCOUNT_SETTINGS_PATH = '/account';
+
 export function isGuestInvitePath(path: string): boolean {
   return /^\/guest\/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\/invite\/[A-Za-z0-9_-]{43}$/.test(
     path,

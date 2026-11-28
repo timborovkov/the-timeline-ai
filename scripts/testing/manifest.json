@@ -851,7 +851,7 @@
   "apps/web/src/components/home/capture-dialog.test.tsx": {
     "group": "dom"
   },
-  "apps/web/src/components/home/daily-digest-block.test.tsx": {
+  "apps/web/src/components/home/workspace-brief.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/home/digest-history-table.test.tsx": {
@@ -1358,6 +1358,9 @@
   },
   "apps/web/src/lib/form-action-toast.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/lib/github-login-link.test.ts": {
+    "group": "unit"
   },
   "apps/web/src/lib/google-drive-limited-use.test.ts": {
     "group": "unit"
@@ -2272,6 +2275,9 @@
   "packages/shared/src/messaging/templates.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/messaging/updates.integration.test.ts": {
+    "group": "integration"
+  },
   "packages/shared/src/monitoring/sentry-runtime.test.ts": {
     "group": "unit"
   },
@@ -2610,6 +2616,9 @@
     "group": "integration"
   },
   "apps/worker/src/evals/communication-report.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/proposal-evidence.test.ts": {
     "group": "unit"
   },
   "apps/worker/src/workers/communication-grounding.test.ts": {

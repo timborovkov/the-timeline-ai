@@ -3,6 +3,9 @@ import path from 'node:path';
 
 import { expect, test } from '@playwright/test';
 
+import { signInFromCurrentPage } from './helpers.js';
+import { e2eUsers } from './test-data.js';
+
 const LOCAL_SHOT_DIR = path.join('test-results', 'google-sign-in');
 const CLOUD_SHOT_DIR = '/opt/cursor/artifacts';
 
@@ -30,10 +33,33 @@ test('sign-in offers Google with identity scopes only', async ({ page }) => {
 test('sign-in explains linking denials without confirming an account', async ({ page }) => {
   await page.goto('/sign-in?error=OAuthAccountNotLinked');
 
-  await expect(
-    page.getByRole('alert').filter({ hasText: /never linked automatically/ }),
-  ).toBeVisible();
+  const alert = page.getByRole('alert').filter({ hasText: 'original sign-in method' });
+  await expect(alert).toBeVisible();
+  await expect(alert.getByRole('link', { name: 'Account settings' })).toHaveAttribute(
+    'href',
+    '/account',
+  );
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+});
+
+test('GitHub linking starts from Account settings after signing in', async ({ page }) => {
+  await page.goto('/sign-in?error=OAuthAccountNotLinked');
+  await page.getByRole('link', { name: 'Account settings' }).click();
+  await expect(page).toHaveURL(/\/sign-in\?callbackUrl=/);
+  await signInFromCurrentPage(page, e2eUsers.owner.email, /\/account$/);
+  await expect(page.getByRole('heading', { name: 'Sign-in methods' })).toBeVisible();
+
+  const authorize = 'https://github.com/login/oauth/authorize?**';
+  await page.route(authorize, (route) =>
+    route.fulfill({ status: 200, body: 'GitHub authorization' }),
+  );
+  const [request] = await Promise.all([
+    page.waitForRequest(authorize),
+    page.getByRole('button', { name: 'Link GitHub' }).click(),
+  ]);
+  const params = new URL(request.url()).searchParams;
+  expect(params.get('state')).toBeTruthy();
+  expect(params.get('redirect_uri')).toMatch(/\/api\/auth\/callback\/github$/);
 });
 
 function saveSignInScreenshot(localPath: string, name: string): void {

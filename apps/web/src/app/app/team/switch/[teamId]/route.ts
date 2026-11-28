@@ -11,6 +11,7 @@ import {
 } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { getSiteUrl } from '@/lib/site-url';
+import { updateDestinationPath } from '@/lib/update-links';
 
 function appRedirect(path: '/app' | '/sign-in'): NextResponse {
   return NextResponse.redirect(new URL(path, getSiteUrl()));
@@ -40,7 +41,10 @@ export async function POST(
 
   const cookieStore = await cookies();
   cookieStore.set(ACTIVE_TEAM_COOKIE, serializeActiveTeamCookie(teamId), activeTeamCookieOptions());
-  const digest = z.uuid().safeParse(new URL(request.url).searchParams.get('digest'));
+  const query = new URL(request.url).searchParams;
+  const destination = updateDestinationPath(query.get('update') ?? undefined);
+  if (destination) return NextResponse.redirect(new URL(destination, getSiteUrl()), 303);
+  const digest = z.uuid().safeParse(query.get('digest'));
   if (!digest.success) return appRedirect('/app');
   const target = new URL('/app/digests', getSiteUrl());
   target.searchParams.set('digest', digest.data);

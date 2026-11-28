@@ -22,6 +22,8 @@ const fakes = vi.hoisted(() => ({
   fakeDbUpdate: vi.fn(),
   fakeDbInsert: vi.fn(),
   fakeDbSelect: vi.fn(),
+  fakeUpdateCurrent: vi.fn(),
+  fakeUpdateSave: vi.fn(),
   fakeSendMessage: vi.fn(),
   fakeAssertNotLastOwner: vi.fn(),
   fakeAdminRecordConnectionAttention: vi.fn(),
@@ -122,6 +124,7 @@ await vi.mock(
   () => ({
     withTeam: () => ({
       requireMembership: fakes.fakeRequireMembership,
+      updates: { current: fakes.fakeUpdateCurrent, save: fakes.fakeUpdateSave },
       calendar: {
         getCalendarSettings: fakes.fakeGetCalendarSettings,
         upsertCalendarSettings: fakes.fakeUpsertCalendarSettings,
@@ -586,32 +589,21 @@ describe('updateInboundEmailWhitelistAction', () => {
 });
 
 describe('updateDigestPreferenceAction', () => {
-  it('treats the implicit enabled default as an unchanged preference', async () => {
-    fakes.fakeDbSelect.mockReturnValueOnce(selectChain([]));
-
+  beforeEach(() => fakes.fakeUpdateCurrent.mockResolvedValue({ schedule: undefined }));
+  const settings = { enabled: true, name: 'Team update' };
+  it('leaves an unchanged effective update preference alone', async () => {
+    fakes.fakeUpdateCurrent.mockResolvedValue({ schedule: { settings } });
     await expect(
       updateDigestPreferenceAction({}, form({ dailyDigestEnabled: 'on' })),
     ).resolves.toEqual({ ok: true });
-
-    expect(fakes.fakeDbInsert).not.toHaveBeenCalled();
-    expect(fakes.fakeDbUpdate).not.toHaveBeenCalled();
-    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
-    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+    expect(fakes.fakeUpdateSave).not.toHaveBeenCalled();
   });
 
-  it('tracks an explicit disable when no preference row exists', async () => {
-    fakes.fakeDbSelect.mockReturnValueOnce(selectChain([]));
-
+  it('pauses the effective default while retaining its other settings', async () => {
+    fakes.fakeUpdateCurrent.mockResolvedValue({ schedule: { settings } });
     await expect(updateDigestPreferenceAction({}, form({}))).resolves.toEqual({ ok: true });
-
-    expect(fakes.fakeDbInsert).toHaveBeenCalled();
-    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
-      'team_management_action_completed',
-      { action: 'settings_update' },
-    );
-    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app');
-    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+    expect(fakes.fakeUpdateSave).toHaveBeenCalledWith('default', { ...settings, enabled: false });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/updates');
   });
 
   it('re-enables and queues an already configured update for this member only', async () => {

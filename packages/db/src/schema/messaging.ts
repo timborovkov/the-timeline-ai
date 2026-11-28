@@ -125,6 +125,65 @@ export const dailyDigests = pgTable(
   ],
 );
 
+export const updateRuns = pgTable(
+  'update_runs',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    windowEnd: timestamp('window_end', { withTimezone: true }).notNull(),
+    scheduleKey: text('schedule_key').notNull(),
+    summary: text('summary').notNull(),
+    payload: jsonb('payload').notNull().default({}),
+    status: dailyDigestStatus('status').notNull().default('generated'),
+    deliveryId: uuid('delivery_id').references(() => messageDeliveries.id, {
+      onDelete: 'set null',
+    }),
+    generatedAt: timestamp('generated_at', { withTimezone: true }).defaultNow().notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    error: text('error'),
+  },
+  (table) => [
+    index('update_runs_team_user_generated_idx').on(table.teamId, table.userId, table.generatedAt),
+    uniqueIndex('update_runs_schedule_slot_unq').on(
+      table.teamId,
+      table.userId,
+      table.scheduleKey,
+      table.windowEnd,
+    ),
+  ],
+);
+
+export const updateSchedules = pgTable(
+  'update_schedules',
+  {
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    scheduleKey: text('schedule_key').notNull(),
+    settings: jsonb('settings').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('update_schedules_member_unq')
+      .on(table.teamId, table.userId, table.scheduleKey)
+      .where(sql`${table.userId} IS NOT NULL`),
+    uniqueIndex('update_schedules_workspace_unq')
+      .on(table.teamId)
+      .where(sql`${table.userId} IS NULL`),
+    check(
+      'update_schedules_workspace_default_chk',
+      sql`${table.userId} IS NOT NULL OR ${table.scheduleKey} = 'default'`,
+    ),
+  ],
+);
+
 export const messagePreferences = pgTable(
   'message_preferences',
   {

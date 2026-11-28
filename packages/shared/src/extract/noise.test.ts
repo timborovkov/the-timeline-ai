@@ -19,6 +19,15 @@ describe('isNoisyExtractedFact', () => {
     expect(isNoisyExtractedFact(fact('Taylor reacted to the LinkedIn post.'))).toBe(true);
   });
 
+  it('keeps business facts joined to a file transmission in either order', () => {
+    for (const statement of [
+      'Northwind approved the purchase and sent the signed order as a file.',
+      'Mira shared a file and approved the purchase.',
+      'Mira shared a file confirming the purchase.',
+    ])
+      expect(isNoisyExtractedFact(fact(statement))).toBe(false);
+  });
+
   it('keeps durable facts that mention tools or platforms', () => {
     expect(
       isNoisyExtractedFact(fact('The team mentioned GitHub as the preferred issue tracker.')),
@@ -92,6 +101,7 @@ describe('isLowSignalEntityMention', () => {
     expect(
       isLowSignalEntityMention({ name: 'financial data', type: 'project', role: 'topic' }),
     ).toBe(false);
+    expect(isLowSignalObjectName({ name: '青空物流', type: 'company' })).toBe(false);
     expect(isLowSignalObjectName({ name: 'AuditAI', type: 'company' })).toBe(false);
     expect(isLowSignalObjectName({ name: 'KPMG', type: 'company' })).toBe(false);
     expect(isLowSignalObjectName({ name: 'financial data', type: 'project' })).toBe(false);

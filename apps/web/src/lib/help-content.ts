@@ -162,7 +162,7 @@ export const HELP_PAGES: HelpPage[] = [
           'Open a task or object to inspect its source evidence before changing status, owner or due date.',
           'Pin frequently used objects, boards or documents so you can return to them from Home.',
           'Open Approvals for changes that need a decision. Accept supported changes or reject unsupported suggestions.',
-          'Work → Digests lists recent updates and their sources. Use Customize updates on Home to preview a daily brief or weekly overview and choose from the delivery options available to you.',
+          'Work → Updates lets you manage schedules and opens Update history. On Home, the Workspace brief summarizes recent timeline activity.',
           'Use Ask about a specific project or decision. Check its citations before sharing the answer.',
         ],
         appLink: { href: '/app/work', label: 'Open Work' },

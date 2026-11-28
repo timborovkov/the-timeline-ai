@@ -509,6 +509,45 @@ describe('Resend messaging adapter', () => {
     });
   });
 
+  it('withholds a scheduled email when the current authorized message differs from the first attempt', async () => {
+    process.env.RESEND_API_KEY = 'server-token';
+    process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
+    const original = {
+      to: 'first@example.test',
+      name: 'Taylor',
+      teamName: 'First workspace',
+      dashboardUrl: 'https://timeline.test/app',
+    };
+    const first = fakeDeliveryDb(null, { create: true });
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ name: 'application_error' }), { status: 500 })),
+    );
+    await sendMessage('welcome', original, {
+      db: first.db as never,
+      dedupeKey: 'scheduled-fixture',
+      fetch: fetchMock,
+      requireCurrentEmailPayload: true,
+    });
+    const metadata = (first.recorded[0] as { metadata: Record<string, unknown> }).metadata;
+    const retry = fakeDeliveryDb(
+      { id: 'new-delivery', status: 'failed', dedupeKey: 'scheduled-fixture' },
+      { metadata },
+    );
+    await expect(
+      sendMessage(
+        'welcome',
+        { ...original, to: 'current@example.test', teamName: 'Current workspace' },
+        {
+          db: retry.db as never,
+          dedupeKey: 'scheduled-fixture',
+          fetch: fetchMock,
+          requireCurrentEmailPayload: true,
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, retryable: false });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps Resend 5xx failures retryable', async () => {
     process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';

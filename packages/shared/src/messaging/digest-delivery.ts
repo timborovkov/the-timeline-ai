@@ -1,6 +1,7 @@
 import {
   type Db,
   dailyDigests,
+  type updateRuns,
   messagePreferences,
   teamMembers,
   teamBillingAccounts,
@@ -36,6 +37,10 @@ import type {
   MessageChannel,
   SendMessageResult,
 } from '#src/messaging/types.js';
+import { formatUpdateChatText, updateSubject } from '#src/messaging/update-format.js';
+import { presentUpdateReport } from '#src/messaging/update-report.js';
+import { HOME_UPDATE_KEY, type UpdateSettings } from '#src/messaging/update-settings.js';
+import { latestUpdateTime, UPDATE_DISPATCH_GRACE_MS } from '#src/messaging/update-timing.js';
 import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
 import { sendTeamSlackDirectMessage, sendTeamSlackMessage } from '#src/slack/outbound.js';
 import { withTeam } from '#src/team-scope.js';
@@ -206,25 +211,7 @@ export async function sendDailyDigest(input: {
         email: contact?.kind === 'email_members' ? contact.email : recipient.email,
         contact,
         digestUrl: digestUrl?.href ?? input.digestUrl,
-        payload: stored.updateRevision
-          ? {
-              updateRevision: stored.updateRevision,
-              teamName: 'your workspace',
-              userName: null,
-              ...(payload.timezone ? { timezone: payload.timezone } : {}),
-              windowStart: payload.windowStart,
-              windowEnd: payload.windowEnd,
-              summary: 'A new update is ready. Open Timeline to read it.',
-              pendingApprovals: 0,
-              eventCount: 0,
-              sourceDistribution: {},
-              objectChangesByType: {},
-              newTeamMembers: [],
-              tasks: [],
-              upcomingCalendar: [],
-              links: [],
-            }
-          : payload,
+        payload: stored.updateRevision ? updateNotice(payload, stored.updateRevision) : payload,
         ...(input.fetch ? { fetch: input.fetch } : {}),
       }),
     );
@@ -255,6 +242,111 @@ export async function sendDailyDigest(input: {
           };
   await input.db.update(dailyDigests).set(digestUpdate).where(eq(dailyDigests.id, input.digestId));
   return result;
+}
+
+const updateDestinationKinds = {
+  email: 'email_members',
+  telegram: 'telegram_dm_members',
+  slack: 'slack_dm_members',
+} satisfies Record<Exclude<UpdateSettings['channel'], 'workspace'>, TeamDigestDestination['kind']>;
+
+export async function sendScheduledUpdate(input: {
+  db: Db;
+  teamId: string;
+  userId: string;
+  runId: string;
+  digestUrl: string;
+  fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
+  now?: Date;
+}): Promise<SendMessageResult> {
+  const { db, teamId, userId, runId } = input;
+  const scope = withTeam(db, teamId, userId);
+  const role = await scope.requireMembership();
+  const skipped = { ok: true, skipped: true, skippedStatus: 'skipped' } as const;
+  if (!['owner', 'admin', 'member'].includes(role)) return skipped;
+
+  const run = await scope.updates.findDeliveryRun(runId);
+  if (!run || run.scheduleKey === HOME_UPDATE_KEY || run.status === 'skipped') return skipped;
+  if (run.status === 'sent') return { ...skipped, skippedStatus: 'sent' };
+
+  const stored = run.payload as DailyDigestPayload;
+  const report = stored.update;
+  if (!report) return skipped;
+  const now = input.now ?? new Date();
+  if (now.getTime() - run.windowEnd.getTime() >= UPDATE_DISPATCH_GRACE_MS) return skipped;
+
+  const digestUrl = new URL(input.digestUrl);
+  digestUrl.searchParams.set('team', teamId);
+  const destinations = personalDigestDestinations(await listTeamDigestDestinations(db, teamId));
+  const results: SendMessageResult[] = [];
+  for (const destination of destinations) {
+    const { schedule, timezone } = await scope.updates.current(run.scheduleKey);
+    if (
+      !schedule?.settings.enabled ||
+      schedule.revision !== report.revision ||
+      latestUpdateTime(schedule.settings, timezone, now).getTime() !== run.windowEnd.getTime()
+    )
+      break;
+    const channel = schedule.settings.channel;
+    if (channel !== 'workspace' && destination.kind !== updateDestinationKinds[channel]) continue;
+    if (
+      !personalDigestDestinations(await listTeamDigestDestinations(db, teamId)).some(
+        (enabled) => enabled.id === destination.id,
+      )
+    )
+      continue;
+    const contact = await configuredPersonalDigestRecipient(db, destination, userId);
+    if (!contact) continue;
+
+    const visible = await presentUpdateReport(scope, stored, now);
+    if (!visible.update?.groups.length) break;
+    const payload = schedule.settings.includeContent
+      ? visible
+      : updateNotice(visible, report.revision);
+    results.push(
+      await deliverPersonalDigestDestination({
+        db,
+        digest: run,
+        destination,
+        email: contact.kind === 'email_members' ? contact.email : '',
+        contact,
+        digestUrl: digestUrl.href,
+        payload,
+        scheduled: true,
+        ...(input.fetch ? { fetch: input.fetch } : {}),
+      }),
+    );
+  }
+
+  const result = rollupDeliveryResults(results);
+  if (result.skipped && result.skippedStatus !== 'sent') return result;
+  await scope.updates.recordDelivery(runId, {
+    status: result.ok ? 'sent' : 'failed',
+    sentAt: result.ok ? now : null,
+    error: result.error ?? null,
+    deliveryId: result.deliveryId ?? null,
+  });
+  return result;
+}
+
+function updateNotice(payload: DailyDigestPayload, revision: string): DailyDigestPayload {
+  return {
+    updateRevision: revision,
+    teamName: 'your workspace',
+    userName: null,
+    ...(payload.timezone ? { timezone: payload.timezone } : {}),
+    windowStart: payload.windowStart,
+    windowEnd: payload.windowEnd,
+    summary: 'A new update is ready. Open Timeline to read it.',
+    pendingApprovals: 0,
+    eventCount: 0,
+    sourceDistribution: {},
+    objectChangesByType: {},
+    newTeamMembers: [],
+    tasks: [],
+    upcomingCalendar: [],
+    links: [],
+  };
 }
 
 export async function sendWorkspaceDailyDigest(input: {
@@ -320,10 +412,11 @@ function rollupDeliveryResults(results: SendMessageResult[]): SendMessageResult 
 
 async function deliverPersonalDigestDestination(input: {
   db: Db;
-  digest: typeof dailyDigests.$inferSelect;
+  digest: typeof dailyDigests.$inferSelect | typeof updateRuns.$inferSelect;
   destination: TeamDigestDestination;
   email: string;
   contact: PersonalDigestRecipient | null;
+  scheduled?: boolean;
   digestUrl: string;
   payload: DailyDigestPayload;
   fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
@@ -338,18 +431,39 @@ async function deliverPersonalDigestDestination(input: {
   if (input.destination.kind === 'email_members') {
     return sendMessage(
       'daily_digest',
-      { to: input.email, digestUrl: input.digestUrl, payload: input.payload },
+      {
+        to: input.email,
+        digestUrl: input.digestUrl,
+        payload: input.payload,
+        ...(input.scheduled ? { teamId: input.digest.teamId } : {}),
+      },
       {
         db: input.db,
         teamId: input.digest.teamId,
         userId: input.digest.userId,
         dedupeKey,
+        ...(input.scheduled || input.payload.updateRevision
+          ? { requireCurrentEmailPayload: true }
+          : {}),
         ...(input.fetch ? { fetch: input.fetch } : {}),
       },
     );
   }
-  const text = formatDigestChatText({ payload: input.payload, digestUrl: input.digestUrl });
-  if (input.destination.kind === 'slack_dm_members') {
+  const channel = input.destination.kind === 'slack_dm_members' ? 'slack' : 'telegram';
+  const text = input.scheduled
+    ? formatUpdateChatText({
+        payload: input.payload,
+        digestUrl: input.digestUrl,
+        teamId: input.digest.teamId,
+        channel,
+      })
+    : formatDigestChatText({ payload: input.payload, digestUrl: input.digestUrl });
+  const subject = input.payload.update
+    ? updateSubject(input.payload)
+    : input.payload.updateRevision
+      ? 'Timeline update'
+      : `Daily digest for ${input.payload.teamName}`;
+  if (channel === 'slack') {
     const slackUserId =
       input.contact?.kind === 'slack_dm_members'
         ? input.contact.slackUserId
@@ -363,7 +477,7 @@ async function deliverPersonalDigestDestination(input: {
       provider: 'slack',
       teamId: input.digest.teamId,
       userId: input.digest.userId,
-      subject: `Daily digest for ${input.payload.teamName}`,
+      subject,
       dedupeKey,
       metadata: { slack_user_id: slackUserId },
       send: () =>
@@ -372,6 +486,7 @@ async function deliverPersonalDigestDestination(input: {
           teamId: input.digest.teamId,
           slackUserId,
           text,
+          ...(input.scheduled ? { scheduledUpdate: true } : {}),
         }),
     });
   }
@@ -392,7 +507,7 @@ async function deliverPersonalDigestDestination(input: {
     provider: 'telegram',
     teamId: input.digest.teamId,
     userId: input.digest.userId,
-    subject: `Daily digest for ${input.payload.teamName}`,
+    subject,
     dedupeKey,
     metadata: { telegram_chat_id: telegramChatId },
     send: () =>
@@ -401,6 +516,7 @@ async function deliverPersonalDigestDestination(input: {
         text,
         token,
         teamId: input.digest.teamId,
+        ...(input.scheduled ? { scheduledUpdate: true } : {}),
       }),
   });
 }

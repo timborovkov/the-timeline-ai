@@ -700,6 +700,16 @@ removed.
 
 Deferred Slack/Telegram command delivery stores an AES-256-GCM encrypted payload in the existing Redis queue infrastructure, including the credential needed to complete that authorized send. Successful jobs are removed immediately; failed jobs expire after 24 hours. Pending quota-delayed sends remain until eligible. Delivery logs contain job IDs, never message contents or credentials. Agent answers retain their existing conversation-turn delivery path.
 
+## GitHub sign-in linking
+
+GitHub sign-in resolves a linked account by its stable GitHub user ID. An
+existing Timeline account can add that identity from Account settings after
+signing in. The callback requires the initiating account, the OAuth state, and
+a current session for the same active Timeline account. The write checks current
+legal acceptance and session revocation under the account lock. Linking stores
+the GitHub user ID and keeps the Timeline email and verification status intact.
+Each GitHub identity can belong to one Timeline account.
+
 ## Password recovery
 
 Password recovery stores SHA-256 digests of random 32-byte, single-use tokens,
@@ -783,7 +793,11 @@ recheck the project, sources and commitments. Saved-view digests reevaluate
 matches for the recipient and use personal destinations. Configurable briefings
 recheck their sources in the archive. Their personal email and chat notices
 contain an authenticated archive link. Dispatch rechecks the recipient’s verified
-email or workspace chat link. Shared channel delivery uses team-visible content.
+email or workspace chat link and the currently enabled workspace delivery
+destination. New team defaults also send a link. Members can opt in to including the selected content in a personally
+configured schedule. The worker checks the current schedule, membership, and source access
+before delivery. Archive views check access again. Shared channel delivery uses
+team-visible content.
 Preview and generation use the host workspace’s existing inference budget. Source-health
 counts apply source visibility before aggregation. OCR correction history retains
 earlier derived text subject to the source document's access and deletion

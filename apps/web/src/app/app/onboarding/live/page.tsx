@@ -1,4 +1,5 @@
 import { getDigestPreference } from '@timeline/shared/messaging';
+import { DEFAULT_UPDATE_KEY } from '@timeline/shared/messaging/format';
 import { withTeam } from '@timeline/shared/team-scope';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
@@ -41,17 +42,16 @@ export default async function GoLivePage() {
   if (firstRun.phase !== 'live') {
     await scope.onboarding.setFirstRunPhase('live');
   }
-  const digestPreference = await getDigestPreference({
-    db,
-    teamId: active.teamId,
-    userId: session.user.id,
-  });
+  const { schedule } = await scope.updates.current(DEFAULT_UPDATE_KEY);
+  const enabled =
+    schedule?.settings.enabled ??
+    (await getDigestPreference({ db, teamId: active.teamId, userId: session.user.id })).enabled;
 
   return (
     <GoLiveScreen
       workStyle={firstRun.workStyle}
       inboundEmail={status.inboundEmail}
-      digestEnabled={digestPreference.enabled}
+      digestEnabled={enabled}
     />
   );
 }

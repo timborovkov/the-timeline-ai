@@ -236,7 +236,7 @@ describe('background proposal evals', () => {
       conversation_key: CONVERSATION_KEY,
       // Slack is a human communication source, so the persisted version includes
       // the shared communication policy pin from processConversationReviewJob.
-      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall-${COMMUNICATION_POLICY_VERSION}-${COMMUNICATION_AUDIT_VERSION}`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v4-evidence-${COMMUNICATION_POLICY_VERSION}-${COMMUNICATION_AUDIT_VERSION}`,
     });
   });
 });

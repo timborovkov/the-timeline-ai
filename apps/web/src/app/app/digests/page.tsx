@@ -1,10 +1,12 @@
 import {
   listDailyDigests,
   presentSavedViewDigest,
+  presentUpdateReport,
   type DailyDigestPayload,
 } from '@timeline/shared/messaging';
 import { withTeam } from '@timeline/shared/team-scope';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
@@ -12,12 +14,12 @@ import { DigestHistoryTable } from '@/components/home/digest-history-table';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
-import { auth } from '@/lib/auth';
+import { getRequestIdentity } from '@/lib/auth';
 import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
-  title: 'Digests',
-  description: 'Browse previous scheduled updates.',
+  title: 'Update history',
+  description: 'Browse past updates and their delivery channels.',
 };
 
 export const dynamic = 'force-dynamic';
@@ -27,10 +29,11 @@ export default async function DigestsPage({
 }: {
   searchParams: Promise<{ digest?: string | string[]; team?: string }>;
 }) {
-  const session = await auth();
+  const { session, impersonation } = await getRequestIdentity();
   if (!session?.user) redirect('/sign-in');
+  if (impersonation) redirect('/app');
   const { active, memberships } = await resolveActiveTeam(session.user.id);
-  if (!active) redirect('/sign-in');
+  if (!active) redirect('/app');
 
   const query = await searchParams;
   const selectedId = z
@@ -54,52 +57,64 @@ export default async function DigestsPage({
       </div>
     );
   }
-  const rows = await listDailyDigests({
-    db,
-    teamId: active.teamId,
-    userId: session.user.id,
-    limit: 90,
-  });
+  if (query.team && query.team !== active.teamId && !requestedTeam) redirect('/app');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  if (selectedId && !rows.some((row) => row.id === selectedId)) {
-    rows.unshift(
-      ...(await listDailyDigests({
-        db,
-        teamId: active.teamId,
-        userId: session.user.id,
-        id: selectedId,
-        limit: 1,
-      })),
-    );
-  }
-  // One `now` + request-scoped match cache so history rows reuse each view scan.
-  const now = new Date();
+  const role = await scope.requireMembership();
+  if (!['owner', 'admin', 'member'].includes(role)) redirect('/app');
+  const identity = { db, teamId: active.teamId, userId: session.user.id };
+  const [scheduled, previous, direct] = await Promise.all([
+    scope.updates.history(selectedId),
+    listDailyDigests({ ...identity, limit: 90 }),
+    selectedId ? listDailyDigests({ ...identity, id: selectedId, limit: 1 }) : [],
+  ]);
+  const rows = [
+    ...new Map([...scheduled, ...previous, ...direct].map((row) => [row.id, row])).values(),
+  ]
+    .sort((a, b) => {
+      if (a.id === selectedId) return -1;
+      if (b.id === selectedId) return 1;
+      return (b.sentAt ?? b.windowEnd).getTime() - (a.sentAt ?? a.windowEnd).getTime();
+    })
+    .slice(0, 90);
+  const deliveries = await scope.updates.deliveryInfo(rows.map((row) => row.id));
   const presented = await Promise.all(
     rows.map(async (row) => {
-      const { payload } = await presentSavedViewDigest(
-        scope,
-        row.payload as DailyDigestPayload,
-        now,
-      );
+      const stored = row.payload as DailyDigestPayload;
+      const payload =
+        row.id === selectedId
+          ? stored.update
+            ? await presentUpdateReport(scope, stored)
+            : (await presentSavedViewDigest(scope, stored)).payload
+          : undefined;
+      const delivery = deliveries.get(row.id);
       return {
         id: row.id,
+        name: stored.update?.name ?? 'Daily update',
         status: row.status,
-        summary: payload.summary,
-        windowEnd: row.windowEnd.toISOString(),
+        date: (delivery?.sentAt ?? row.sentAt ?? row.windowEnd).toISOString(),
+        timezone: stored.timezone,
+        channels: delivery?.channels ?? [],
         payload,
       };
     }),
   );
   return (
-    <div data-app-width="collection" className="space-y-6">
+    <div data-app-width="collection" className="max-w-4xl space-y-6">
       <PageHeader
-        variant="collection"
-        title="Digests"
-        subtitle="Open a previous update and its supporting sources."
-        metadata={[{ label: 'days', value: rows.length, mono: true }]}
-        srLabel={`Digests · ${String(rows.length)} days`}
+        title="Update history"
+        subtitle="Open an update to see what it covered."
+        trailing={
+          <Button asChild variant="outline">
+            <Link href="/app/updates">Manage updates</Link>
+          </Button>
+        }
       />
+      {selectedId && !presented.some((update) => update.id === selectedId) && (
+        <p className="text-sm text-fg-muted">
+          This update is unavailable in the current workspace.
+        </p>
+      )}
       <DigestHistoryTable selectedId={selectedId} digests={presented} />
     </div>
   );

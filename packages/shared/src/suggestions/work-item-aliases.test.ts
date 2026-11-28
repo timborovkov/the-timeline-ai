@@ -70,3 +70,21 @@ describe('stampUniqueWorkItemAliasesOntoBundles', () => {
     expect(bundle?.items[1]?.proposedPayload).not.toHaveProperty('aliases');
   });
 });
+
+it('attaches a source tracker to the named task across bundles without stamping the separate follow-up', () => {
+  const task = (title: string) => ({
+    title,
+    operation: 'create',
+    targetKind: 'task',
+    proposedPayload: { canonicalName: title },
+  });
+  const bundles = stampUniqueWorkItemAliasesOntoBundles({
+    text: 'Can you take ENG-77 after QA? Please follow up on the failed export.',
+    bundles: [
+      { items: [task('Take ENG-77 after QA')] },
+      { items: [task('Follow up on the failed export')] },
+    ],
+  });
+  expect(bundles[0]?.items[0]?.proposedPayload).toHaveProperty('aliases', ['ENG-77']);
+  expect(bundles[1]?.items[0]?.proposedPayload).not.toHaveProperty('aliases');
+});

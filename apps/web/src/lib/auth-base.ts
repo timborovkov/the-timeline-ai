@@ -20,9 +20,16 @@ import Google from 'next-auth/providers/google';
 import { z } from 'zod';
 
 import { trackProductEventBestEffort } from '@/lib/analytics';
-import { signedInAuthRedirect } from '@/lib/auth-redirect';
+import { ACCOUNT_SETTINGS_PATH, signedInAuthRedirect } from '@/lib/auth-redirect';
 import { authConfig } from '@/lib/auth.config';
 import { markEmailVerifiedFromTrustedOAuth, sendEmailVerification } from '@/lib/email-verification';
+import {
+  finishGitHubLoginLink,
+  hasGitHubLinkReturn,
+  isGitHubCallback,
+  readGitHubCallbackSession,
+  readGitHubLinkIntent,
+} from '@/lib/github-login-link';
 import { rememberLastLoginMethod } from '@/lib/last-login-method';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import {
@@ -102,6 +109,7 @@ if (hasGitHubAuth) {
     GitHub({
       clientId: process.env.AUTH_GITHUB_ID,
       clientSecret: process.env.AUTH_GITHUB_SECRET,
+      checks: ['pkce', 'state'],
       userinfo: {
         url: 'https://api.github.com/user',
         async request({ tokens }: { tokens: { access_token?: string } }) {
@@ -123,7 +131,7 @@ if (hasGoogleAuth) {
   );
 }
 
-const nextAuth = NextAuth(() => {
+const nextAuth = NextAuth((request) => {
   // Auth.js runs authorization and account creation within this configuration's
   // invocation; concurrent callbacks must never share verification metadata.
   const registrationAttempt = createOAuthRegistrationAttempt();
@@ -140,6 +148,15 @@ const nextAuth = NextAuth(() => {
     callbacks: {
       ...authConfig.callbacks,
       async signIn({ account, user, profile }) {
+        const githubCallback =
+          account?.provider === 'github' && request && isGitHubCallback(request) ? request : null;
+        if (githubCallback && account) {
+          const linkUserId = await readGitHubLinkIntent(githubCallback);
+          if (linkUserId || hasGitHubLinkReturn(githubCallback)) {
+            return finishGitHubLoginLink(db, githubCallback, linkUserId, account.providerAccountId);
+          }
+        }
+
         // New OAuth profiles can carry provider IDs rather than database UUIDs.
         // Resolve existing connections before considering the authenticated DB identity.
         let alreadyLinked = false;
@@ -156,6 +173,14 @@ const nextAuth = NextAuth(() => {
             );
           if (linked?.suspendedAt) return false;
           alreadyLinked = Boolean(linked);
+        }
+        if (
+          githubCallback &&
+          !alreadyLinked &&
+          (await readGitHubCallbackSession(githubCallback))?.sub
+        ) {
+          // Prevent Auth.js from implicitly linking via a regular sign-in callback.
+          return ACCOUNT_SETTINGS_PATH;
         }
         if (user.id && z.uuid().safeParse(user.id).success) {
           const [current] = await db

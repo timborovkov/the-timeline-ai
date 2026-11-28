@@ -48,6 +48,15 @@ function CurrentBrowserStorage() {
           </tr>
           <tr>
             <td>
+              <strong>timeline.github-login-link</strong>, an encrypted, HTTP-only cookie lasting 15
+              minutes. On HTTPS it uses the <strong>__Host-</strong> prefix.
+            </td>
+            <td>
+              Match a GitHub linking request to the signed-in Timeline account that started it.
+            </td>
+          </tr>
+          <tr>
+            <td>
               <strong>tl_last_login_method</strong>, a host-only, HTTP-only, SameSite=Lax cookie
               lasting up to 180 days after a successful sign-in. It is Secure in production.
             </td>
