@@ -17,7 +17,7 @@ The committed URLs target `https://thetimeline.cc`. For an isolated preview, use
 
 ## Import into a board
 
-Open **Import and keep in sync**, choose a pipeline and destination, and preview the records. Map each stage, preview the resulting changes, and confirm any existing company or deal matches. Unresolved matches stay available when you reopen the preview. Confirm the import to authorize future stage changes. The card shows its source and lets an admin stop syncing the stage. A deal that leaves the pipeline keeps its card and its last lane.
+Open **Import and keep in sync**, choose a pipeline and destination, and preview the records. Map each stage, preview the resulting changes, and confirm any existing company or deal matches. Unresolved matches stay available when you reopen the preview. If a synced deal gains a company that needs review, its stage keeps updating. Confirm the company match in the preview to add the relationship. Confirm the import to authorize future stage changes. The card shows its source and lets an admin stop syncing the stage. A deal that leaves the pipeline keeps its card and its last lane.
 
 ## Verify on HubSpot Free
 

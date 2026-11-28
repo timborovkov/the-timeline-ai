@@ -606,12 +606,14 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
       }
       return;
     }
-    if (
-      record.companies.some(
-        (key) => !links.some((l) => l.recordKey === key && l.state === 'active'),
-      )
-    )
-      return;
+    const matchedCompanies: Link[] = [];
+    const missingCompanies: string[] = [];
+    for (const key of record.companies) {
+      const company = links.find((l) => l.recordKey === key && l.state === 'active');
+      if (company) matchedCompanies.push(company);
+      else missingCompanies.push(key);
+    }
+    if (!own && missingCompanies.length) return missingCompanies;
     if (
       entry.action === 'Review possible matches' &&
       !entry.candidates.some((c) => c.id === choice) &&
@@ -759,16 +761,14 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
       if (item && item.lane !== lane)
         await boardScope.updateBoardItem(itemId, { laneId: lane }, actor);
     }
-    for (const key of record.companies) {
-      const company = links.find((l) => l.recordKey === key && l.state === 'active');
-      if (company)
-        await objectScope.addRelationship({
-          fromEntityId: entity.id,
-          toEntityId: company.entityId,
-          kind: 'related',
-          actorUserId: userId,
-          actor,
-        });
+    for (const company of matchedCompanies) {
+      await objectScope.addRelationship({
+        fromEntityId: entity.id,
+        toEntityId: company.entityId,
+        kind: 'related',
+        actorUserId: userId,
+        actor,
+      });
     }
     const patch = {
       state: 'active',
@@ -778,6 +778,7 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
     };
     await query.update(boardImportLinks).set(patch).where(eq(boardImportLinks.id, link.id));
     Object.assign(link, patch);
+    return missingCompanies;
   }
 
   async function apply(
@@ -789,20 +790,23 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
     links: Link[],
     choice?: string,
   ) {
-    await applyRecord(query, txCore, rule, record, entry, links, choice);
+    const missingCompanies = await applyRecord(query, txCore, rule, record, entry, links, choice);
     const link = links.find((l) => l.recordKey === record.key);
     const state =
       link?.state === 'unlinked' ||
       entry.action === 'Skipped' ||
       (link && link.sourceAt > record.sourceAt)
         ? 'skipped'
-        : link?.sourceEventId === record.eventId
+        : link?.sourceEventId === record.eventId && !missingCompanies?.length
           ? 'applied'
           : 'waiting';
     const values = {
       state,
       entityId: link?.entityId ?? null,
-      waitingOn: state === 'waiting' ? [...(record.closingIssues ?? []), ...record.companies] : [],
+      waitingOn:
+        state === 'waiting'
+          ? [...(record.closingIssues ?? []), ...(missingCompanies ?? record.companies)]
+          : [],
     };
     await query
       .insert(boardImportEffects)

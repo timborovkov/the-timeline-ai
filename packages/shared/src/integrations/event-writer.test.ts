@@ -26,7 +26,9 @@ const {
   artifactClusters,
   artifactEvidenceAssociations,
   billingUsageLedger,
+  boardImportEffects,
   entities,
+  entityRelationships,
   factEntities,
   facts,
   integrations,
@@ -155,15 +157,57 @@ describe('writeIntegrationEvents visibility', () => {
       { canonicalName: 'Example Company' },
       { kind: 'user', userId: USER_ID },
     );
-    await write('two', 2);
+    const secondCompany = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'New partner',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const changedDeal = event('two', 2);
+    changedDeal.extra.hubspot.companies.push({ id: '4', name: secondCompany.canonicalName });
+    const [stageEventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [changedDeal],
+    });
+    if (!stageEventId) throw new Error('Expected the deal stage event');
     await write('one', 1);
     await write('one', 0);
     let board = await scope.boards.getBoard(boardId);
     expect(board?.items).toHaveLength(1);
     expect(board?.items[0]?.laneId).toBe(lane2);
-    expect(await db.select().from(entities)).toHaveLength(2);
+    expect(await db.select().from(entities)).toHaveLength(3);
     const item = board?.items[0];
     if (!item) throw new Error('Expected imported deal card');
+    const dealEffect = async () =>
+      (
+        await db
+          .select()
+          .from(boardImportEffects)
+          .where(eq(boardImportEffects.sourceEventId, stageEventId))
+      ).find((effect) => effect.recordKey === 'deal:1');
+    const partnerRelationships = () =>
+      db
+        .select()
+        .from(entityRelationships)
+        .where(eq(entityRelationships.kind, 'related'))
+        .then((rows) =>
+          rows.filter(
+            (row) =>
+              [row.fromEntityId, row.toEntityId].includes(secondCompany.id) &&
+              [row.fromEntityId, row.toEntityId].includes(item.entityId),
+          ),
+        );
+    expect(await dealEffect()).toMatchObject({ state: 'waiting', waitingOn: ['company:4'] });
+    expect(await partnerRelationships()).toHaveLength(0);
+    const matchPreview = await scope.boardImports.preview(config);
+    expect(matchPreview.rows.find((row) => row.key === 'company:4')?.action).toBe(
+      'Review possible matches',
+    );
+    await scope.boardImports.confirm(config, matchPreview.revision, {
+      'company:4': secondCompany.id,
+    });
+    expect(await partnerRelationships()).toHaveLength(1);
+    expect(await dealEffect()).toMatchObject({ state: 'applied', waitingOn: [] });
     await expect(
       scope.boards.updateBoardItem(item.id, { laneId: lane1 }, { kind: 'user', userId: USER_ID }),
     ).rejects.toThrow();
