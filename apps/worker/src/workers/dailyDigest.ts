@@ -2,6 +2,7 @@ import { type Db } from '@timeline/db';
 import { childLogger, messaging, queue } from '@timeline/shared';
 import { ResendError } from '@timeline/shared/email';
 import { PlatformAccessError } from '@timeline/shared/platform-admin';
+import { withTeam } from '@timeline/shared/team-scope';
 import { Worker, DelayedError, type Job } from 'bullmq';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
@@ -23,6 +24,7 @@ function siteUrl(): string {
 export async function processDailyDigestJob(
   deps: { db: Db },
   job: queue.DailyDigestJobData,
+  tickAt = new Date(),
 ): Promise<{
   recipients?: number;
   digestId?: string;
@@ -30,20 +32,72 @@ export async function processDailyDigestJob(
   skipped?: boolean;
   permanentFailure?: boolean;
 }> {
+  if (job.kind === 'updates-tick') {
+    const now = new Date();
+    const scanAt = job.catchup ? now : tickAt;
+    const candidates = await messaging.listUpdateDispatchCandidates(deps.db);
+    const graceMs = job.catchup ? messaging.UPDATE_DISPATCH_GRACE_MS : 15 * 60_000;
+    const due = candidates.flatMap((candidate) => {
+      const windowEnd = messaging.latestUpdateTime(candidate.settings, candidate.timezone, scanAt);
+      if (
+        scanAt.getTime() - windowEnd.getTime() >= graceMs ||
+        now.getTime() - windowEnd.getTime() >= messaging.UPDATE_DISPATCH_GRACE_MS ||
+        windowEnd < candidate.joinedAt ||
+        (candidate.changedAt && windowEnd < candidate.changedAt)
+      )
+        return [];
+      return [
+        {
+          kind: 'update' as const,
+          teamId: candidate.teamId,
+          userId: candidate.userId,
+          scheduleKey: candidate.key,
+          revision: candidate.revision,
+          windowEnd: windowEnd.toISOString(),
+        },
+      ];
+    });
+    for (let offset = 0; offset < due.length; offset += 50) {
+      await Promise.all(
+        due.slice(offset, offset + 50).map((data) => queue.enqueueScheduledUpdateJob(data)),
+      );
+    }
+    return { recipients: due.length };
+  }
+
+  if (job.kind === 'update') {
+    const digestId = await messaging.generateScheduledUpdate({
+      scope: withTeam(deps.db, job.teamId, job.userId),
+      key: job.scheduleKey,
+      revision: job.revision,
+      windowEnd: new Date(job.windowEnd),
+    });
+    if (digestId && job.scheduleKey !== messaging.HOME_UPDATE_KEY) {
+      await queue.enqueueScheduledUpdateSendJob({
+        kind: 'update-send',
+        digestId,
+        teamId: job.teamId,
+        userId: job.userId,
+      });
+    }
+    return digestId ? { digestId, skipped: false } : { skipped: true };
+  }
+
   if (job.kind === 'tick') {
     const explicitWindow =
       job.reason !== 'catchup' && job.windowStart && job.windowEnd
         ? { start: job.windowStart, end: job.windowEnd }
         : null;
+    // Existing configured profiles keep their settings and delivery path.
     const recipients = await messaging.listDailyDigestRecipients(deps.db);
-    await Promise.all(
+    const eligible = await Promise.all(
       recipients.map(async (recipient) => {
         const preference = await messaging.getDigestPreference({
           db: deps.db,
           teamId: recipient.teamId,
           userId: recipient.userId,
         });
-        if (!preference.enabled) return;
+        if (!preference.enabled || (job.reason && !preference.options)) return false;
         const now = new Date();
         const enqueue = (window: { start: Date; end: Date }, delayMs?: number) => {
           if (preference.revision && window.end <= new Date(preference.revision)) return;
@@ -73,13 +127,14 @@ export async function processDailyDigestJob(
             enqueue(window),
             delay > 0 && delay <= 24 * 60 * 60 * 1000 ? enqueue(next, delay) : undefined,
           ]);
-          return;
+          return true;
         }
         await enqueue(
           explicitWindow
             ? { start: new Date(explicitWindow.start), end: new Date(explicitWindow.end) }
             : messaging.defaultDigestWindow(now, preference.timezone, preference.hour),
         );
+        return true;
       }),
     );
     const sharedTeamIds = await messaging.listWorkspaceDigestTeamIds(deps.db);
@@ -97,7 +152,7 @@ export async function processDailyDigestJob(
         });
       }),
     );
-    return { recipients: recipients.length };
+    return { recipients: eligible.filter(Boolean).length };
   }
 
   if (job.kind === 'workspace-reschedule') {
@@ -153,12 +208,22 @@ export async function processDailyDigestJob(
     };
   }
 
-  const result = await messaging.sendDailyDigest({
-    db: deps.db,
-    digestId: job.digestId,
-    to: job.email,
-    digestUrl: `${siteUrl()}/app/digests?digest=${job.digestId}`,
-  });
+  const digestUrl = `${siteUrl()}/app/digests?digest=${job.digestId}`;
+  const result =
+    job.kind === 'update-send'
+      ? await messaging.sendScheduledUpdate({
+          db: deps.db,
+          runId: job.digestId,
+          teamId: job.teamId,
+          userId: job.userId,
+          digestUrl,
+        })
+      : await messaging.sendDailyDigest({
+          db: deps.db,
+          digestId: job.digestId,
+          to: job.email,
+          digestUrl,
+        });
   // Permanent provider failures (e.g. Resend inactive recipient) are already
   // recorded on the digest/delivery rows — retrying only burns attempts + Sentry.
   if (!result.ok && !result.skipped && result.retryable !== false) {
@@ -174,7 +239,9 @@ export async function processDailyDigestJob(
 }
 
 function digestBillingTeamId(job: queue.DailyDigestJobData): string | undefined {
-  return job.kind === 'recipient' || job.kind === 'workspace-send' ? job.teamId : undefined;
+  return job.kind === 'recipient' || job.kind === 'update' || job.kind === 'workspace-send'
+    ? job.teamId
+    : undefined;
 }
 
 function digestJobTeamId(job: queue.DailyDigestJobData): string | undefined {
@@ -203,7 +270,12 @@ export async function skipSuspendedDigestAccess<T>(
   }
 }
 
-export function startDailyDigestWorker(deps: { db: Db }): Worker<queue.DailyDigestJobData> {
+export function startDailyDigestWorker(
+  deps: { db: Db },
+  queueName:
+    typeof queue.QUEUE_NAMES.dailyDigest | typeof queue.QUEUE_NAMES.scheduledUpdates = queue
+    .QUEUE_NAMES.dailyDigest,
+): Worker<queue.DailyDigestJobData> {
   const process = guardWorkerProcessor(
     deps.db,
     async (job: Job<queue.DailyDigestJobData>, token?: string) => {
@@ -212,7 +284,7 @@ export function startDailyDigestWorker(deps: { db: Db }): Worker<queue.DailyDige
         deps.db,
         digestBillingTeamId(job.data),
         'digest',
-        () => processDailyDigestJob(deps, job.data),
+        () => processDailyDigestJob(deps, job.data, new Date(job.opts.prevMillis ?? job.timestamp)),
         workerBillingJobOptions(job, token),
       ).catch(async (error: unknown) => {
         if (
@@ -228,6 +300,9 @@ export function startDailyDigestWorker(deps: { db: Db }): Worker<queue.DailyDige
       if (job.data.kind === 'tick' && job.data.reason === 'scheduled') {
         await queue.recordDailyDigestTick(job.opts.prevMillis ?? job.timestamp);
       }
+      if (job.data.kind === 'updates-tick' && !job.data.catchup) {
+        await queue.recordScheduledUpdatesTick(job.opts.prevMillis ?? job.timestamp);
+      }
       log.info(
         { jobId: job.id, ...result, durationMs: Date.now() - startedAt },
         'digest job complete',
@@ -236,7 +311,7 @@ export function startDailyDigestWorker(deps: { db: Db }): Worker<queue.DailyDige
     },
   );
   const worker = new Worker<queue.DailyDigestJobData>(
-    queue.QUEUE_NAMES.dailyDigest,
+    queueName,
     (job, token, signal) => skipSuspendedDigestAccess(job, () => process(job, token, signal)),
     { connection: queue.getRedisConnection(), concurrency: 2 },
   );

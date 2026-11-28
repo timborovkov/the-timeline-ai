@@ -6,6 +6,7 @@ import {
   digestSummaryParagraphs,
   formatDigestActivityItems,
   formatDigestObjectType,
+  updateCoveringRange,
   type DailyDigestPayload,
 } from '@timeline/shared/messaging/format';
 import { localDateFromInstant } from '@timeline/shared/time';
@@ -13,6 +14,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { DigestTaskDetail } from '@/components/home/digest-task-detail';
+import { UpdateReportGroupList } from '@/components/home/update-report-group';
 import { RegionalDate } from '@/components/regional-date';
 import { RegionalNumber } from '@/components/regional-number';
 import { parseDisplayDate } from '@/lib/display-dates';
@@ -35,6 +37,19 @@ export function DigestBody({
   digest: DailyDigestPayload;
   className?: string;
 }) {
+  if (digest.update) {
+    return (
+      <div className={cn('space-y-4', className)}>
+        {digest.update.groups.length === 0 && (
+          <p className="text-sm text-fg-muted">No sources are currently visible.</p>
+        )}
+        {digest.update.groups.map((group) => (
+          <UpdateReportGroupList key={group.section} group={group} />
+        ))}
+        <p className="font-mono text-xs text-fg-dim">Covering {updateCoveringRange(digest)}</p>
+      </div>
+    );
+  }
   const summary = digestSummaryParagraphs(digest.summary);
   const sections = digestContentSections(digest);
   const activityItems = formatDigestActivityItems(digestActivityStats(digest));

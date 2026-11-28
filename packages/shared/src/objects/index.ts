@@ -3762,25 +3762,48 @@ export async function findActiveProjectsByNameOrAlias(
   scope: TeamScopeCore,
   name: string,
 ): Promise<Pick<ObjectRow, 'id' | 'canonicalName'>[]> {
+  const rows = await findActiveObjectsByNameOrAlias(db, scope, 'project', name, false);
+  return rows.map(({ id, canonicalName }) => ({ id, canonicalName }));
+}
+
+async function findActiveObjectsByNameOrAlias(
+  db: Db,
+  scope: TeamScopeCore,
+  type: 'person' | 'project',
+  name: string,
+  matchEvidenceTypography: boolean,
+) {
   await scope.requireMembership();
-  const normalizedName = name.trim().toLowerCase();
-  if (!normalizedName) return [];
+  if (!name.trim()) return [];
+  // Evidence accepts typographical dashes and apostrophes. Check uniqueness
+  // under the same equivalence, including collisions with a canonical name.
+  const fold = (value: SQL) =>
+    matchEvidenceTypography
+      ? sql`translate(lower(${value}), ${'‘’‐‑‒–—'}, ${"''-----"})`
+      : sql`lower(${value})`;
+  const normalizedName = fold(sql`${name.trim()}::text`);
 
   return db
-    .select({ id: entities.id, canonicalName: entities.canonicalName })
+    .select({
+      id: entities.id,
+      type: entities.type,
+      canonicalName: entities.canonicalName,
+      aliases: entities.aliases,
+      metadata: entities.metadata,
+    })
     .from(entities)
     .where(
       and(
         eq(entities.teamId, scope.teamId),
-        eq(entities.type, 'project'),
+        eq(entities.type, type),
         isNull(entities.archivedAt),
         isNull(entities.mergedIntoId),
         or(
-          sql`lower(${entities.canonicalName}) = ${normalizedName}`,
+          sql`${fold(sql`${entities.canonicalName}`)} = ${normalizedName}`,
           sql`EXISTS (
             SELECT 1
             FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
-            WHERE lower(alias.value) = ${normalizedName}
+            WHERE ${fold(sql`alias.value`)} = ${normalizedName}
           )`,
         ),
       ),
@@ -9227,6 +9250,8 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
       >,
     ) => searchObjectsBySummary(db, scope, input),
     getObject: (idOrName: string) => getObject(db, scope, idOrName),
+    findActiveObjectsByNameOrAlias: (type: 'person' | 'project', name: string) =>
+      findActiveObjectsByNameOrAlias(db, scope, type, name, true),
     findActiveProjectsByNameOrAlias: (name: string) =>
       findActiveProjectsByNameOrAlias(db, scope, name),
     getObjectSummary: (entityId: string) => getObjectSummary(db, scope, entityId),

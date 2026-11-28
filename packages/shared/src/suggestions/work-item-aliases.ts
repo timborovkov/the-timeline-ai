@@ -114,10 +114,29 @@ export function stampUniqueWorkItemAliasesOntoBundles<T extends HubAttachableIte
   const extra = unique.flatMap((item) =>
     item.kind === 'github' ? [item.alias, `PR-${item.alias.replace('#', '-')}`] : [item.alias],
   );
+  const tasks = args.bundles.flatMap((bundle) => bundle.items.filter(isCreateTaskItem));
+  // A source-wide key can identify a single task. With several deliverables
+  // only enrich a task that already names the key itself.
+  const namedTasks = tasks.filter((item) => {
+    const names = [
+      item.title,
+      item.proposedPayload.canonicalName,
+      ...mergeAliases(item.proposedPayload.aliases, []),
+    ];
+    return names.some(
+      (name) =>
+        typeof name === 'string' &&
+        (extra.some((alias) => alias.toLowerCase() === name.trim().toLowerCase()) ||
+          uniqueWorkItemAliasesFromText(name)?.[0]?.alias === unique[0]?.alias),
+    );
+  });
+  const eligible =
+    tasks.length === 1 ? tasks[0] : namedTasks.length === 1 ? namedTasks[0] : undefined;
+  if (!eligible) return args.bundles;
   return args.bundles.map((bundle) => ({
     ...bundle,
     items: bundle.items.map((item) => {
-      if (!isCreateTaskItem(item)) return item;
+      if (item !== eligible) return item;
       const aliases = mergeAliases(item.proposedPayload.aliases, extra);
       if (
         aliases.length ===

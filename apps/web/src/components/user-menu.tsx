@@ -1,6 +1,6 @@
 'use client';
 
-import { Bot, LifeBuoy, LogOut, MailWarning, User } from 'lucide-react';
+import { Bot, LifeBuoy, LogOut, MailWarning, Settings, User } from 'lucide-react';
 import Link from 'next/link';
 import { useActionState } from 'react';
 
@@ -15,6 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ACCOUNT_SETTINGS_PATH } from '@/lib/auth-redirect';
 import { useFormActionToast } from '@/lib/form-action-toast';
 import { signOutAfterClearingLocalSession } from '@/lib/sign-out-session';
 
@@ -99,12 +100,20 @@ export function UserMenu({ user, impersonating = false, platformAdmin = false }:
         ) : null}
         <DropdownMenuSeparator />
         {impersonating ? null : (
-          <DropdownMenuItem asChild>
-            <Link href="/app/agent-provisioning">
-              <Bot aria-hidden="true" className="size-4" />
-              Agent provisioning
-            </Link>
-          </DropdownMenuItem>
+          <>
+            <DropdownMenuItem asChild>
+              <Link href={ACCOUNT_SETTINGS_PATH}>
+                <Settings aria-hidden="true" className="size-4" />
+                Account settings
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/app/agent-provisioning">
+                <Bot aria-hidden="true" className="size-4" />
+                Agent provisioning
+              </Link>
+            </DropdownMenuItem>
+          </>
         )}
         <form action={reopenOnboardingChecklistAction}>
           <DropdownMenuItem asChild>

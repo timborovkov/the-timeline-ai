@@ -19,6 +19,7 @@ import {
 import { getEnv } from '@timeline/shared/env';
 import {
   addTeamDigestDestination,
+  DEFAULT_UPDATE_KEY,
   getDigestPreference,
   parseAddDigestDestinationInput,
   removeTeamDigestDestination,
@@ -292,7 +293,8 @@ export async function updateDigestPreferenceAction(
   formData: FormData,
 ): Promise<DigestPreferenceState> {
   return runSentryServerAction('update_digest_preference', async () => {
-    const session = await auth();
+    const { session, impersonation } = await getRequestIdentity();
+    if (impersonation) return { error: 'Exit impersonation to manage updates.' };
     if (!session?.user) return { error: 'Not signed in' };
     const { active } = await resolveActiveTeam(session.user.id);
     if (!active) return { error: 'No active team' };
@@ -310,6 +312,22 @@ export async function updateDigestPreferenceAction(
     if (retry && previous.retryScheduleTeamId !== active.teamId)
       return { error: 'Reopen the digest settings to retry scheduling.' };
     const enabled = retry || formData.get('dailyDigestEnabled') === 'on';
+    if (!retry && ['owner', 'admin', 'member'].includes(role)) {
+      const { schedule } = await scope.updates.current(DEFAULT_UPDATE_KEY);
+      if (schedule) {
+        if (schedule.settings.enabled === enabled) return { ok: true };
+        await scope.updates.save(DEFAULT_UPDATE_KEY, { ...schedule.settings, enabled });
+        await safeMarkOnboardingStep(scope, 'daily_digest');
+        trackProductEventBestEffort(
+          { kind: 'user', userId: session.user.id, teamId: active.teamId },
+          'team_management_action_completed',
+          { action: 'settings_update' },
+        );
+        revalidatePath('/app');
+        revalidatePath('/app/updates');
+        return { ok: true };
+      }
+    }
     const existing = await db
       .select({
         id: messagePreferences.id,

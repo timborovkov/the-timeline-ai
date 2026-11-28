@@ -6,6 +6,7 @@ import {
   expireActiveTeamCookie,
   shouldExpireUnverifiedActiveTeamCookie,
 } from '@/lib/active-team-cookie';
+import { ACCOUNT_SETTINGS_PATH } from '@/lib/auth-redirect';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { TERMS_VERSION, isCurrentPrivacyVersion } from '@/lib/legal-versions';
 import { nonEmptyEnv } from '@/lib/safe-redirect';
@@ -94,7 +95,10 @@ export function authorizeProductRequest({
   const path = request.nextUrl.pathname;
   const isAuthed = Boolean(auth?.user);
 
-  const isAppRoute = isRouteWithin(path, '/app') || isRouteWithin(path, '/onboarding');
+  const isAppRoute =
+    isRouteWithin(path, '/app') ||
+    isRouteWithin(path, '/onboarding') ||
+    isRouteWithin(path, ACCOUNT_SETTINGS_PATH);
   const isInviteRoute = isRouteWithin(path, '/accept-invite') || isRouteWithin(path, '/guest');
 
   if (isAppRoute && !isAuthed) return unauthenticatedAppRedirect(request);

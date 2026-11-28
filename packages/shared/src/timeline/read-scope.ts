@@ -821,6 +821,7 @@ export function createTimelineReadScope({
   return {
     listEventsPage,
     listAllEventsInWindow,
+    listEventsArrivedInWindow,
     getEvent,
     getEventsByIds: getEventsByIdsImpl,
     listIntegrationSearchEventIds: listIntegrationSearchEventIdsImpl,
