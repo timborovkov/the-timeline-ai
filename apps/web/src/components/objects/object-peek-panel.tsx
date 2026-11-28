@@ -316,7 +316,9 @@ function TaskDetailMetadata({
         task={task}
         columns={columns}
         pending={saving === 'status'}
-        onChange={(status) => save('status', { status })}
+        onChange={(status) => {
+          save('status', { status });
+        }}
       />
       <DetailField label="Priority">
         <EditableMetadata
