@@ -1,5 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
+import { z } from 'zod';
+
 import { getEnv } from '#src/env.js';
 import { NATIVE_PROVIDER_LABELS } from '#src/integrations/provider-labels.js';
 import { providerFetch } from '#src/integrations/request.js';
@@ -21,6 +23,13 @@ import type {
 import { childLogger } from '#src/logger.js';
 
 const fetch = providerFetch('linear');
+const removedIssue = z.object({
+  id: z.string().min(1),
+  identifier: z.string().optional(),
+  updatedAt: z.string().optional(),
+  team: z.object({ id: z.string() }).nullish(),
+  teamId: z.string().optional(),
+});
 
 // Phase 11 — Linear provider.
 //
@@ -878,13 +887,13 @@ export const linearProvider: IntegrationProvider = {
     if (!p.data) return [];
     switch (p.type) {
       case 'Issue': {
-        const node = p.data as unknown as LinearIssueNode;
-        if (!node.id) return [];
         if (p.action === 'remove') {
-          const teamId = node.team?.id ?? p.data.teamId;
-          if (typeof teamId !== 'string') return [];
+          const parsed = removedIssue.safeParse(p.data);
+          if (!parsed.success) return [];
+          const node = parsed.data;
+          const teamId = node.team?.id ?? node.teamId;
           const removedAt = p.createdAt ?? node.updatedAt;
-          if (!removedAt) return [];
+          if (!teamId || !removedAt || !Number.isFinite(Date.parse(removedAt))) return [];
           return [
             {
               provider: 'linear',
@@ -901,7 +910,8 @@ export const linearProvider: IntegrationProvider = {
             },
           ];
         }
-        if (!node.updatedAt) return [];
+        const node = p.data as unknown as LinearIssueNode;
+        if (!node.id || !node.updatedAt) return [];
         const updatedFrom = p.updatedFrom;
         const forceTransition =
           p.action === 'restore' ||
