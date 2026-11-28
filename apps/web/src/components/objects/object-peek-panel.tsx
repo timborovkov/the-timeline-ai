@@ -310,46 +310,14 @@ function TaskDetailMetadata({
   onProjectChangeReverted: () => void;
   taskCategoriesEnabled: boolean;
 }) {
-  const displayedStatus = task.type === 'task' ? taskDisplayStatus(task.status) : task.status;
   return (
     <div className="space-y-1 px-5 py-5">
-      <DetailField label="Status">
-        {task.statusSource ? (
-          <div>
-            <CollectionStatus value={task.status} label={statusLabel(displayedStatus)} />
-            <ImportSourceControl source={task.statusSource} />
-          </div>
-        ) : (
-          <EditableMetadata
-            label={task.type === 'task' ? 'Task status' : 'Object status'}
-            className="min-h-8 px-1.5"
-            pending={saving === 'status'}
-          >
-            <EditableMetadata.Value>
-              <CollectionStatus value={task.status} label={statusLabel(displayedStatus)} />
-            </EditableMetadata.Value>
-            <EditableMetadata.Editor>
-              <select
-                value={displayedStatus}
-                onChange={(event) => {
-                  save('status', { status: event.currentTarget.value });
-                }}
-                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                aria-label="Status"
-              >
-                {columns.map((column) => (
-                  <option key={column} value={column}>
-                    {statusLabel(column)}
-                  </option>
-                ))}
-                {!columns.includes(displayedStatus) ? (
-                  <option value={task.status}>{statusLabel(task.status)}</option>
-                ) : null}
-              </select>
-            </EditableMetadata.Editor>
-          </EditableMetadata>
-        )}
-      </DetailField>
+      <ObjectStatusMetadata
+        task={task}
+        columns={columns}
+        pending={saving === 'status'}
+        onChange={(status) => save('status', { status })}
+      />
       <DetailField label="Priority">
         <EditableMetadata
           label={task.type === 'task' ? 'Task priority' : 'Object priority'}
@@ -421,6 +389,59 @@ function TaskDetailMetadata({
         </DetailField>
       ) : null}
     </div>
+  );
+}
+
+function ObjectStatusMetadata({
+  task,
+  columns,
+  pending,
+  onChange,
+}: {
+  task: objects.ObjectRow;
+  columns: string[];
+  pending: boolean;
+  onChange: (status: string) => void;
+}) {
+  const displayedStatus = task.type === 'task' ? taskDisplayStatus(task.status) : task.status;
+  return (
+    <DetailField label="Status">
+      {task.statusSource ? (
+        <div>
+          <CollectionStatus value={task.status} label={statusLabel(displayedStatus)} />
+          <ImportSourceControl source={task.statusSource} />
+        </div>
+      ) : (
+        <EditableMetadata
+          label={task.type === 'task' ? 'Task status' : 'Object status'}
+          className="min-h-8 px-1.5"
+          pending={pending}
+        >
+          <EditableMetadata.Value>
+            <CollectionStatus value={task.status} label={statusLabel(displayedStatus)} />
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
+            <select
+              value={displayedStatus}
+              onChange={(event) => {
+                onChange(event.currentTarget.value);
+              }}
+              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+              aria-label="Status"
+            >
+              {columns.map((column) => (
+                <option key={column} value={column}>
+                  {statusLabel(column)}
+                </option>
+              ))}
+              {!columns.includes(displayedStatus) ? (
+                <option value={task.status}>{statusLabel(task.status)}</option>
+              ) : null}
+            </select>
+          </EditableMetadata.Editor>
+        </EditableMetadata>
+      )}
+    </DetailField>
   );
 }
 
