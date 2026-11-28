@@ -33,8 +33,7 @@ interface TurnContent {
   [key: string]: unknown;
 }
 
-export type ApprovalStepState =
-  'queued' | 'running' | 'completed' | 'failed' | 'needs-check' | 'declined';
+type ApprovalStepState = 'queued' | 'running' | 'completed' | 'failed' | 'needs-check' | 'declined';
 
 export interface ApprovalStepKey {
   messageId: string;

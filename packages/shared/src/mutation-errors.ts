@@ -1,4 +1,4 @@
-export const OBJECT_NOT_FOUND_CODE = 'TIMELINE_OBJECT_NOT_FOUND';
+const OBJECT_NOT_FOUND_CODE = 'TIMELINE_OBJECT_NOT_FOUND';
 
 export class StaleWorkspaceStateError extends Error {
   constructor() {

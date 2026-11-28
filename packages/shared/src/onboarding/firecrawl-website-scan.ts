@@ -1,4 +1,4 @@
-import { DEFAULT_FIRECRAWL_API_ORIGIN, getEnv } from '#src/env.js';
+import { getEnv } from '#src/env.js';
 import { validateMcpUrl } from '#src/mcp/auth.js';
 import {
   parsePublicWebsiteUrl,
@@ -6,8 +6,6 @@ import {
   type FirstRunScanFailureReason,
 } from '#src/onboarding/first-run.js';
 
-/** Default Firecrawl Cloud origin (tests and docs). Prefer getEnv().FIRECRAWL_API_ORIGIN at runtime. */
-export const FIRECRAWL_API_ORIGIN = DEFAULT_FIRECRAWL_API_ORIGIN;
 const FIRECRAWL_REQUEST_TIMEOUT_MS = 15_000;
 const FIRECRAWL_CRAWL_TIMEOUT_MS = 45_000;
 const FIRECRAWL_POLL_INTERVAL_MS = 1_000;
