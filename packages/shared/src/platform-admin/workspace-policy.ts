@@ -172,6 +172,7 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'objects.searchObjects': read,
   'objects.searchObjectsBySummary': read,
   'objects.getObject': read,
+  'objects.findActiveObjectsByNameOrAlias': read,
   'objects.findActiveProjectsByNameOrAlias': read,
   'objects.getObjectSummary': read,
   'objects.listReadyObjectSummaries': read,

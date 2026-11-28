@@ -231,11 +231,19 @@ const firstPersonCommitment =
   /(?<![\p{L}\p{N}])(?:I (?:will|shall|won['’]t|can['’]t|cannot|can(?=\s+not\b))|I['’]ll|ich werde|revisaré|prepararé|haré|enviaré|escribiré|terminaré|completaré|tarkistan|valmistelen|lähetän|kirjoitan)(?![\p{L}\p{N}])/iu;
 const assignmentDenial = /(?:(?:will|shall|can)\s+not|won['’]t|can['’]t|cannot|declines to)\b/i;
 
-function safeSourceQuote(text: string, quote: string): boolean {
+const courteousTaskRequest =
+  /^could (?:someone|you) (?:please )?(?:send|prepare|review|draft|write|create|deliver|finish|submit)\b/i;
+
+function safeSourceQuote(text: string, quote: string, allowRequestedDeadline = false): boolean {
   const body = normalize(text),
     fragment = normalize(quote);
   const start = body.indexOf(fragment);
-  if (start < 0 || unsafe(quote) || quote.includes('?')) return false;
+  if (start < 0 || unsafe(quote)) return false;
+  if (
+    quote.includes('?') &&
+    !(allowRequestedDeadline && courteousTaskRequest.test(quote) && /^[^?!.]+\?$/.test(quote))
+  )
+    return false;
   const before = body.slice(0, start);
   for (const tag of ['system', 'developer'])
     if (before.lastIndexOf(`<${tag}>`) > before.lastIndexOf(`</${tag}>`)) return false;
@@ -503,9 +511,12 @@ function taskDateAssertions(
           ['is', 'to', 'was', 'is now'].some((verb) =>
             affirmedPrefix.endsWith(`deadline for ${normalize(subject)} ${verb}`),
           );
+    // In a direct request, “could” expresses courtesy. Other qualifiers still
+    // make the date tentative, including a second “could” later in the clause.
+    const directRequest = field === 'dueAt' && courteousTaskRequest.test(affirmedPrefix);
     if (
       !cue ||
-      tentativeAssertion.test(assertion) ||
+      tentativeAssertion.test(directRequest ? assertion.replace(/^could /i, '') : assertion) ||
       (field === 'plannedDate' &&
         /[?]|\b(?:due|deadline|doesn[’']t|don[’']t|can[’']t|cannot)\b/i.test(assertion)) ||
       /\b(?:if|unless|subject to|provided that)\b|\b(?:may|would) (?:be|have|get|fall)\b/i.test(
@@ -585,6 +596,76 @@ function taskDateAssertions(
   }
   return dates;
 }
+/** Correct an invented clock time on a single ordinary task only when its
+ * literal request specifies a day and the draft already picked that local day. */
+export function groundEventLocalDayOnlyDeadline(args: {
+  text: string;
+  name: string;
+  assignee: unknown;
+  project: unknown;
+  claimed: string;
+  timezone: string;
+  occurredAt: Date;
+}): string | undefined {
+  const instant = Date.parse(args.claimed);
+  if (
+    !Number.isFinite(instant) ||
+    /["“”`>\d]|\b(?:example|template|hypothetical|if|unless|not|never|instead|except|time|noon|midnight|morning|afternoon|evening|lunch|EOD|COB|UTC|GMT|opening|closing|o.clock|cut[ -]?off)\b/i.test(
+      args.text,
+    )
+  )
+    return;
+  const sentence =
+    args.text
+      .trim()
+      .split(/(?<=[.!?])\s+|\n+/u)
+      .at(-1) ?? '';
+  const prior = args.text.trim().slice(0, -sentence.length);
+  if (
+    /\b(?:due|deadline|by|at|before|after|hour|zone|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i.test(
+      prior,
+    )
+  )
+    return;
+  const match =
+    /^(?:(.+?) will |please )?([^.,;!?]+?) by (today|tomorrow|(?:next )?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday))[.!]?$/i.exec(
+      sentence,
+    );
+  if (!match?.[2]) return;
+  const actor = match[1];
+  if (
+    actor &&
+    !['i', 'we', typeof args.assignee === 'string' ? normalize(args.assignee) : ''].includes(
+      normalize(actor),
+    )
+  )
+    return;
+  const actionName = (name: string) => normalize(name).replace(/\b(?:the|an|a)\s+/gu, '');
+  const action = actionName(match[2]);
+  const name = actionName(args.name);
+  if (
+    name !== action &&
+    !(
+      typeof args.project === 'string' &&
+      name === action + ' for ' + actionName(args.project) &&
+      mentions(args.text, args.project)
+    )
+  )
+    return;
+  const { affirmed, denied } = taskDateAssertions(
+    sentence,
+    match[2],
+    args.timezone,
+    args.occurredAt,
+    'dueAt',
+  );
+  const [supported] = affirmed;
+  if (affirmed.size !== 1 || typeof supported !== 'number' || denied.size) return;
+  const localDay = (epoch: number) =>
+    zonedDateTimeFromDate(new Date(epoch), args.timezone).toPlainDate().toString();
+  return localDay(instant) === localDay(supported) ? new Date(supported).toISOString() : undefined;
+}
+
 const lifecycleWords: Record<string, RegExp> = {
   doing: /\b(?:started|working on|in progress|empezado|trabajando|begonnen)\b/i,
   done: /\b(?:finished|(?:is|now|was|marked) complete|completed|done|delivered|shipped|verified (?:fixed|resolved)|valmis|terminada|terminado|completada|completado|abgeschlossen)\b/i,
@@ -1092,7 +1173,10 @@ export function groundCommunicationBundles<T extends Item>(args: {
       affirmativeLifecycle(taskClause(quote, support.subject), support.subject, status, sendTask),
     );
   }
-  function* assertionsFromCitation(support: Pick<Support, 'rawEventId' | 'quote' | 'subject'>) {
+  function* assertionsFromCitation(
+    support: Pick<Support, 'rawEventId' | 'quote' | 'subject'>,
+    allowRequestedDeadline = false,
+  ) {
     const citedClause = taskClause(support.quote, support.subject);
     let from = -1;
     let assertionStart = 0;
@@ -1115,7 +1199,10 @@ export function groundCommunicationBundles<T extends Item>(args: {
     for (const [offset, event] of chronology.slice(from).entries()) {
       const text = offset === 0 ? event.contentText.slice(assertionStart) : event.contentText;
       for (const sentence of text.split(/(?<=[.!?])\s+|\n+/u)) {
-        if (sentence.trim() && safeSourceQuote(event.contentText, sentence.trim()))
+        if (
+          sentence.trim() &&
+          safeSourceQuote(event.contentText, sentence.trim(), allowRequestedDeadline)
+        )
           yield {
             event,
             sentence:
@@ -1239,7 +1326,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
     let latest: number | null | undefined = wanted;
     let priorPlan: { rawEventId: string; subject: string } | undefined;
     const visibleSourceOrder = conversationSourceIds;
-    for (const { event, sentence, visible } of assertionsFromCitation(support)) {
+    for (const { event, sentence, visible } of assertionsFromCitation(support, field === 'dueAt')) {
       if (!visible && (!event.id || !chronologyVetoIds.has(event.id))) continue;
       const direct = names.find((name) => namesTask(sentence, name, true));
       const previousId = event.id
@@ -1936,7 +2023,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           return (
             (!isTask || taskEvidenceUnambiguous(item, identityText)) &&
             source &&
-            safeSourceQuote(source.text, support.quote) &&
+            safeSourceQuote(source.text, support.quote, support.field === 'dueAt') &&
             normalize(args.packet).includes(normalize(support.quote)) &&
             !unsafe(support.quote) &&
             (item.targetKind === 'object_relationship' ||

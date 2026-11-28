@@ -2618,6 +2618,9 @@
   "apps/worker/src/evals/communication-report.test.ts": {
     "group": "unit"
   },
+  "apps/worker/src/workers/proposal-evidence.test.ts": {
+    "group": "unit"
+  },
   "apps/worker/src/workers/communication-grounding.test.ts": {
     "group": "unit"
   },

@@ -1,9 +1,14 @@
 import type { EntityMention, ExtractedFact } from '#src/extract/schema.js';
 
-const MESSAGE_MECHANIC_PATTERNS = [
-  /\b(?:shared|sent|posted|forwarded|pasted|dropped)\b.+\b(?:link|url|post|tweet|file|attachment|screenshot|image|photo)\b/i,
-  /\b(?:reacted to|liked)\b.+\b(?:message|post|tweet|thread|comment|reply|link|url)\b/i,
-];
+// Only discard statements whose entire predicate is transmission or reaction.
+// Additional clauses and descriptions can carry the actual business fact.
+const actor = String.raw`(?:[\p{Lu}][\p{L}\p{M}'’-]*(?: [\p{Lu}][\p{L}\p{M}'’-]*){0,2}|[Tt]he team|[Tt]hey|[Ww]e|I)`;
+const medium = String.raw`(?:link|url|post|tweet|file|attachment|screenshot|image|photo|message|comment|reply|thread)`;
+const channel = String.raw`(?:Slack|Telegram|LinkedIn|Drive|X|Twitter)`;
+const pureMessageMechanic = new RegExp(
+  String.raw`^${actor} (?:shared|sent|posted|forwarded|pasted|dropped|reacted to|liked) (?:a |an |the )?(?:${channel} )?${medium}(?: to (?:a |an |the )?(?:${channel} )?${medium}| (?:in|on|via) ${channel})?[.!]?$`,
+  'u',
+);
 
 const LOW_SIGNAL_ANY_TYPE_OBJECT_NAMES = new Set([
   'browserbased',
@@ -100,12 +105,13 @@ const GENERIC_COMPANY_CATEGORY_MODIFIERS = new Set([
   'saas',
 ]);
 
-function normalizeObjectName(value: string): string {
+export function normalizeObjectName(value: string): string {
   return value
+    .normalize('NFKC')
     .toLowerCase()
     .replace(/^@/, '')
     .replace(/\b(inc|llc|ltd|oy|corp|corporation|company|co|gmbh|plc)\b/g, '')
-    .replace(/[^a-z0-9]+/g, '')
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, '')
     .trim();
 }
 
@@ -170,5 +176,5 @@ export function isLowSignalEntityMention(mention: EntityMention): boolean {
 export function isNoisyExtractedFact(fact: ExtractedFact): boolean {
   const statement = fact.statement.trim();
   if (!statement) return true;
-  return MESSAGE_MECHANIC_PATTERNS.some((pattern) => pattern.test(statement));
+  return pureMessageMechanic.test(statement);
 }
